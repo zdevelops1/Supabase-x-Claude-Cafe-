@@ -180,9 +180,28 @@ function systemPrompt(state: GameState) {
   return base + byDifficulty[state.difficulty] + ' Your "reason" is shown live to the human — make it one punchy sentence (max 20 words), confident and specific.';
 }
 
+export class AgentError extends Error {}
+
+/**
+ * Fallback policy (AGENT_FALLBACK):
+ *  - "on"   → offline strategist may replace failed/missing live calls (labeled in UI)
+ *  - "off"  → never fall back; surface the exact error
+ *  - unset  → "off" when ANTHROPIC_API_KEY is configured, "on" when it isn't.
+ * So a configured live agent never silently degrades.
+ */
+export function fallbackAllowed() {
+  const v = (process.env.AGENT_FALLBACK || '').toLowerCase();
+  if (v === 'on') return true;
+  if (v === 'off') return false;
+  return !process.env.ANTHROPIC_API_KEY;
+}
+
 export async function decideClaude(state: GameState, scenario: Scenario, memories: string[]): Promise<ClaudeDecision> {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return fallbackDecision(state, scenario, 'ANTHROPIC_API_KEY not configured');
+  if (!key) {
+    if (fallbackAllowed()) return fallbackDecision(state, scenario, 'ANTHROPIC_API_KEY not configured');
+    throw new AgentError('ANTHROPIC_API_KEY is not configured on the server (and AGENT_FALLBACK=off).');
+  }
 
   const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
   const ids = scenario.actions.map((a) => a.id);
@@ -235,9 +254,13 @@ export async function decideClaude(state: GameState, scenario: Scenario, memorie
     if (!ids.includes(actionId)) throw new Error(`Model returned invalid actionId "${actionId}"`);
     const reason = String(input.reason ?? '').slice(0, 220) || 'Calculated move.';
     const strategyNote = input.strategyNote ? String(input.strategyNote).slice(0, 400) : undefined;
-    return { actionId, reason, strategyNote, source: 'claude', model, latencyMs: Date.now() - started };
+    const latencyMs = Date.now() - started;
+    console.log(`[agent] anthropic ok model=${model} difficulty=${state.difficulty} round=${state.roundIndex + 1} action=${actionId} memories=${memories.length} ${latencyMs}ms`);
+    return { actionId, reason, strategyNote, source: 'claude', model, latencyMs };
   } catch (err) {
-    console.error('[agent] falling back:', err);
-    return fallbackDecision(state, scenario, String((err as Error).message || err));
+    const msg = (err as Error).name === 'AbortError' ? 'Anthropic API timed out after 25s' : String((err as Error).message || err);
+    console.error('[agent] anthropic call FAILED:', msg);
+    if (fallbackAllowed()) return fallbackDecision(state, scenario, msg);
+    throw new AgentError(msg);
   }
 }

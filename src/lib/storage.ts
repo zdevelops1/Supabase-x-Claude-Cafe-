@@ -1,9 +1,10 @@
-import type { ClaudeDecision, GameState } from '../engine/types';
+import type { GameState } from '../engine/types';
+import type { SealedDecision } from './api';
 
 const KEY = 'sxc-cafe-save-v1';
 export interface SaveData {
   state: GameState;
-  pending?: { roundIndex: number; decision: ClaudeDecision };
+  pending?: SealedDecision;
 }
 export const storage = {
   load(): SaveData | null {

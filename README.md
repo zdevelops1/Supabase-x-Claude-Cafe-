@@ -85,4 +85,14 @@ Import the repo → framework **Vite** → add the env vars above → deploy. `v
 5. A few rounds in, point at **Claude's notebook** — it's writing notes about *you*.
 6. Finish the day → day report; finish Day 4 → final scoreboard with the transparent formula. Claude can and does win.
 
+## Live verification (Phase 2)
+With the env vars set on the server (plus `AGENT_FALLBACK=off`, `ENABLE_DIAGNOSTICS=1`):
+```bash
+node scripts/verify-live.mjs https://your-app.vercel.app
+```
+It plays a full Hard game through the real API and checks against Supabase: live Anthropic on every round (any offline-strategist decision = FAIL), sealed decisions (no plaintext move before the human commits; tampered tokens rejected), valid actions, reasons, session/round/final rows, strategy notes written **and** loaded back as memory, and the leaderboard count. Exit code 0 = all PASS. Set `ENABLE_DIAGNOSTICS=0` again before the public demo.
+
+**Sealed decisions:** `/api/agent` returns only an AES-GCM-encrypted token; `/api/resolve` decrypts it server-side, so Claude's move can't be read in DevTools or forged.
+**No silent fallbacks:** with a key configured, a failed Anthropic call shows the exact error + Retry. Supabase write failures show a red banner with the exact Postgres error.
+
 Reloading mid-game resumes where you left off (**RESUME GAME**). `npm run sim` prints a balance check of every scenario's options.

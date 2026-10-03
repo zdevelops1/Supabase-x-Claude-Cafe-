@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { finalScore, winner } from '../engine/engine';
 import type { GameState, RoundRecord } from '../engine/types';
 
-/** Server-only Supabase client (service role). Returns null when not configured → game still works. */
+/** Server-only Supabase client (service role). Returns null when not configured. */
 let client: SupabaseClient | null | undefined;
 export function db(): SupabaseClient | null {
   if (client !== undefined) return client;
@@ -12,36 +12,56 @@ export function db(): SupabaseClient | null {
   return client;
 }
 
-const warn = (where: string, error: unknown) => error && console.warn(`[supabase:${where}]`, (error as { message?: string }).message ?? error);
+type PgErr = { message?: string; code?: string; details?: string; hint?: string } | null | undefined;
+const fmt = (where: string, e: PgErr) =>
+  `[supabase:${where}] ${e?.message ?? String(e)}${e?.code ? ` (code ${e.code})` : ''}${e?.hint ? ` — hint: ${e.hint}` : ''}`;
 
+export class PersistError extends Error {}
+
+const TABLES = ['game_sessions', 'game_rounds', 'agent_memories', 'final_results', 'leaderboard'] as const;
+
+/** Verifies every table/view from the migration exists and is reachable with the service key. */
+export async function schemaCheck() {
+  const sb = db();
+  if (!sb) return { configured: false, ok: false, tables: {} as Record<string, string> };
+  const tables: Record<string, string> = {};
+  await Promise.all(
+    TABLES.map(async (t) => {
+      const { error } = await sb.from(t).select('*', { head: true, count: 'exact' });
+      tables[t] = error ? fmt(t, error) : 'ok';
+    }),
+  );
+  return { configured: true, ok: Object.values(tables).every((v) => v === 'ok'), tables };
+}
+
+/** Throws PersistError with the exact DB error when Supabase is configured but the insert fails. */
 export async function createSession(state: GameState): Promise<boolean> {
   const sb = db();
   if (!sb) return false;
   const { error } = await sb.from('game_sessions').insert({ id: state.sessionId, difficulty: state.difficulty, state });
-  warn('createSession', error);
-  return !error;
+  if (error) throw new PersistError(fmt('game_sessions.insert', error));
+  return true;
 }
 
-export async function loadMemories(sessionId: string): Promise<string[] | null> {
+export async function loadMemories(sessionId: string): Promise<string[]> {
   const sb = db();
-  if (!sb) return null;
+  if (!sb) throw new PersistError('Supabase not configured');
   const { data, error } = await sb
     .from('agent_memories')
     .select('round_index, kind, content')
     .eq('session_id', sessionId)
     .eq('kind', 'strategy')
     .order('round_index', { ascending: true });
-  if (error) {
-    warn('loadMemories', error);
-    return null;
-  }
+  if (error) throw new PersistError(fmt('agent_memories.select', error));
   return (data ?? []).map((m) => `Round ${m.round_index + 1}: ${m.content}`);
 }
 
-export async function persistRound(state: GameState, record: RoundRecord): Promise<boolean> {
+/** Returns a list of exact error strings (empty = everything persisted). */
+export async function persistRound(state: GameState, record: RoundRecord): Promise<string[]> {
   const sb = db();
-  if (!sb) return false;
+  if (!sb) return ['Supabase not configured on the server'];
   const d = record.claudeDecision;
+  const errors: string[] = [];
   const [r1, r2, r3] = await Promise.all([
     sb.from('game_rounds').upsert(
       {
@@ -63,24 +83,25 @@ export async function persistRound(state: GameState, record: RoundRecord): Promi
       },
       { onConflict: 'session_id,round_index' },
     ),
-    sb.from('agent_memories').insert(
-      [
-        {
-          session_id: state.sessionId,
-          round_index: record.index,
-          kind: 'decision',
-          content: `${record.scenarioTitle}: I chose "${record.claude.actionLabel}" (profit $${record.claude.profit}, share ${Math.round(record.claude.share * 100)}%); human chose "${record.player.actionLabel}".`,
-        },
-        ...(d.strategyNote ? [{ session_id: state.sessionId, round_index: record.index, kind: 'strategy', content: d.strategyNote }] : []),
-      ],
-    ),
+    sb.from('agent_memories').insert([
+      {
+        session_id: state.sessionId,
+        round_index: record.index,
+        kind: 'decision',
+        content: `${record.scenarioTitle}: I chose "${record.claude.actionLabel}" (profit $${record.claude.profit}, share ${Math.round(record.claude.share * 100)}%); human chose "${record.player.actionLabel}".`,
+      },
+      ...(d.strategyNote ? [{ session_id: state.sessionId, round_index: record.index, kind: 'strategy', content: d.strategyNote }] : []),
+    ]),
     sb
       .from('game_sessions')
-      .upsert({ id: state.sessionId, difficulty: state.difficulty, status: state.status, round_index: state.roundIndex, state, updated_at: new Date().toISOString() }),
+      .update({ status: state.status, round_index: state.roundIndex, state, updated_at: new Date().toISOString() })
+      .eq('id', state.sessionId)
+      .select('id'),
   ]);
-  warn('round', r1.error);
-  warn('memory', r2.error);
-  warn('session', r3.error);
+  if (r1.error) errors.push(fmt('game_rounds.upsert', r1.error));
+  if (r2.error) errors.push(fmt('agent_memories.insert', r2.error));
+  if (r3.error) errors.push(fmt('game_sessions.update', r3.error));
+  else if (!r3.data?.length) errors.push(`[supabase:game_sessions.update] session ${state.sessionId} not found`);
 
   if (state.status === 'finished') {
     const ps = finalScore(state.cafes.supabase);
@@ -97,18 +118,43 @@ export async function persistRound(state: GameState, record: RoundRecord): Promi
       },
       { onConflict: 'session_id' },
     );
-    warn('final', error);
+    if (error) errors.push(fmt('final_results.upsert', error));
   }
-  return !r1.error;
+  errors.forEach((e) => console.error(e));
+  return errors;
 }
 
 export async function leaderboard() {
   const sb = db();
-  if (!sb) return { configured: false, rows: [], recent: [] };
+  if (!sb) return { configured: false, rows: [], recent: [], error: null as string | null };
   const [lb, recent] = await Promise.all([
     sb.from('leaderboard').select('*'),
     sb.from('final_results').select('difficulty, winner, player_score, claude_score, created_at').order('created_at', { ascending: false }).limit(8),
   ]);
-  warn('leaderboard', lb.error);
-  return { configured: true, rows: lb.data ?? [], recent: recent.data ?? [] };
+  const error = lb.error ? fmt('leaderboard', lb.error) : recent.error ? fmt('final_results.select', recent.error) : null;
+  if (error) console.error(error);
+  return { configured: true, rows: lb.data ?? [], recent: recent.data ?? [], error };
+}
+
+/** Read-back of everything stored for one session. Only exposed when ENABLE_DIAGNOSTICS=1. */
+export async function sessionDiagnostics(sessionId: string) {
+  const sb = db();
+  if (!sb) throw new PersistError('Supabase not configured');
+  const [s, r, m, f] = await Promise.all([
+    sb.from('game_sessions').select('id, difficulty, status, round_index, created_at, updated_at').eq('id', sessionId).maybeSingle(),
+    sb.from('game_rounds').select('round_index, event_id, player_action, claude_action, claude_source, claude_model, claude_reason, claude_latency_ms').eq('session_id', sessionId).order('round_index'),
+    sb.from('agent_memories').select('round_index, kind, content').eq('session_id', sessionId).order('round_index'),
+    sb.from('final_results').select('winner, player_score, claude_score, difficulty').eq('session_id', sessionId).maybeSingle(),
+  ]);
+  const errs = [s.error && fmt('game_sessions', s.error), r.error && fmt('game_rounds', r.error), m.error && fmt('agent_memories', m.error), f.error && fmt('final_results', f.error)].filter(Boolean);
+  return {
+    errors: errs,
+    session: s.data,
+    rounds: r.data ?? [],
+    memories: {
+      decision: (m.data ?? []).filter((x) => x.kind === 'decision').length,
+      strategy: (m.data ?? []).filter((x) => x.kind === 'strategy'),
+    },
+    final: f.data,
+  };
 }

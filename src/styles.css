@@ -314,3 +314,14 @@ button { font-family: inherit; color: inherit; }
 
 .skip-hint { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 45; font-family: var(--pixel); font-size: 11px; padding: 10px 16px; background: var(--panel); border: 3px solid var(--gold); cursor: pointer; animation: blink 0.9s steps(1) infinite; }
 @media (max-height: 820px) { .event-desc { font-size: 19px; } .choice-tags { display: none; } }
+
+.hud-agent.live, .hud-db.ok { color: var(--pos); border-color: var(--green-d) !important; }
+.hud-agent.offline, .hud-db.bad { color: var(--neg); border-color: var(--neg) !important; }
+.hud-db.off { color: var(--muted); }
+.hud-center > .hud-agent, .hud-center > .hud-db { font-size: 9px; }
+.agent-source.live { color: var(--pos); }
+.agent-source.offline { color: var(--neg); }
+.db-error { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 95; background: #3a1414; border: 3px solid var(--neg); padding: 10px 14px; font-size: 17px; max-width: 92vw; cursor: pointer; }
+.db-error b { font-family: var(--pixel); font-size: 10px; color: var(--neg); display: block; margin-bottom: 4px; }
+.chip.bad { border-color: var(--neg); color: var(--neg); }
+.schema-errors { margin-top: 10px; color: var(--neg); font-size: 16px; text-align: left; }

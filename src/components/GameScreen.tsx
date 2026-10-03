@@ -3,7 +3,7 @@ import CafePanel from './CafePanel';
 import { currentScenario, dayTotals, describeEffect, findAction } from '../engine/engine';
 import { SCENARIOS, TOTAL_ROUNDS } from '../engine/scenarios';
 import type { ClaudeDecision, GameState, RoundRecord, RoundResult } from '../engine/types';
-import { api } from '../lib/api';
+import { api, type SealedDecision } from '../lib/api';
 import { storage, type SaveData } from '../lib/storage';
 import { sfx } from '../lib/sfx';
 import { money, signed, signedMoney } from '../lib/useTween';
@@ -29,15 +29,18 @@ export default function GameScreen({
   onQuit: () => void;
 }) {
   const [game, setGame] = useState<GameState>(save.state);
-  const [decision, setDecision] = useState<ClaudeDecision | null>(
-    save.pending && save.pending.roundIndex === save.state.roundIndex ? save.pending.decision : null,
+  // Before reveal the browser only holds an encrypted token — Claude's move is sealed server-side.
+  const [pending, setPending] = useState<SealedDecision | null>(
+    save.pending && save.pending.roundIndex === save.state.roundIndex ? save.pending : null,
   );
-  const [status, setStatus] = useState<ClaudeStatus>(decision ? 'locked' : 'thinking');
+  const [revealed, setRevealed] = useState<ClaudeDecision | null>(null);
+  const [status, setStatus] = useState<ClaudeStatus>(pending ? 'locked' : 'thinking');
   const [choice, setChoice] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('deciding');
   const [record, setRecord] = useState<RoundRecord | null>(save.state.history.at(-1) ?? null);
   const [floaterKey, setFloaterKey] = useState<number | undefined>(undefined);
   const [err, setErr] = useState<string | null>(null);
+  const [dbErrors, setDbErrors] = useState<string[]>([]);
   const [muted, setMuted] = useState(sfx.isMuted());
   const requested = useRef<number>(-1);
 
@@ -54,12 +57,12 @@ export default function GameScreen({
     const started = Date.now();
     const tick = setInterval(() => sfx.think(), 450);
     try {
-      const { decision: d } = await api.agent(g);
+      const d = await api.agent(g);
       const wait = Math.max(0, 1400 - (Date.now() - started)); // let the "thinking" beat land
       await new Promise((r) => setTimeout(r, wait));
-      setDecision(d);
+      setPending(d);
       setStatus('locked');
-      storage.save({ state: g, pending: { roundIndex: g.roundIndex, decision: d } });
+      storage.save({ state: g, pending: d });
     } catch (e) {
       setStatus('error');
       setErr(String((e as Error).message));
@@ -70,25 +73,28 @@ export default function GameScreen({
 
   useEffect(() => {
     if (phase !== 'deciding' || game.status !== 'playing') return;
-    if (decision) return;
+    if (pending) return;
     if (requested.current === game.roundIndex) return;
     requested.current = game.roundIndex;
     askClaude(game);
-  }, [phase, game, decision, askClaude]);
+  }, [phase, game, pending, askClaude]);
 
-  // Both locked in → reveal Claude's choice, then let the engine referee.
+  // Both locked in → server unseals Claude's move and referees; then we play the reveal.
   const resolvingFor = useRef<number>(-1);
   useEffect(() => {
-    if (!choice || !decision || resolvingFor.current === game.roundIndex) return;
+    if (!choice || !pending || resolvingFor.current === game.roundIndex) return;
     resolvingFor.current = game.roundIndex;
     const g = game;
-    setPhase('revealing');
-    setStatus('revealed');
-    sfx.reveal();
-    setTimeout(async () => {
-      setPhase('resolving');
+    setPhase('resolving');
+    (async () => {
       try {
-        const out = await api.resolve(g, choice, decision);
+        const out = await api.resolve(g, choice, pending.sealed);
+        setDbErrors(out.persistErrors ?? []);
+        setRevealed(out.record.claudeDecision);
+        setStatus('revealed');
+        setPhase('revealing');
+        sfx.reveal();
+        await new Promise((r) => setTimeout(r, 2200));
         setGame(out.state);
         setRecord(out.record);
         setFloaterKey(out.record.index + 1);
@@ -105,9 +111,9 @@ export default function GameScreen({
         setStatus('locked');
         setChoice(null);
       }
-    }, 2200);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [choice, decision]);
+  }, [choice, pending]);
 
   const nextRound = () => {
     sfx.click();
@@ -120,7 +126,8 @@ export default function GameScreen({
       return;
     }
     setChoice(null);
-    setDecision(null);
+    setPending(null);
+    setRevealed(null);
     setStatus('thinking');
     setPhase('deciding');
   };
@@ -131,6 +138,9 @@ export default function GameScreen({
     setChoice(id);
   };
 
+  const decision = revealed;
+  const meta = revealed ?? pending?.meta ?? null;
+  const live = meta?.source === 'claude';
   const claudeAction = decision ? findAction(scenario, decision.actionId) : undefined;
   const playerAction = choice ? findAction(scenario, choice) : undefined;
   const roundNo = showingPast && record ? record.index + 1 : Math.min(game.roundIndex + 1, TOTAL_ROUNDS);
@@ -145,6 +155,10 @@ export default function GameScreen({
           <span className="hud-slot">{SLOT_ICON[displaySlot]} {displaySlot.toUpperCase()}</span>
           <span className="hud-round">ROUND {roundNo}/{TOTAL_ROUNDS}</span>
           <span className={`hud-diff ${game.difficulty}`}>{game.difficulty.toUpperCase()}</span>
+          {meta && <span className={`hud-agent ${live ? 'live' : 'offline'}`}>{live ? `● LIVE CLAUDE · ${meta.model}` : '○ OFFLINE FALLBACK'}</span>}
+          <span className={`hud-db ${game.persisted ? (dbErrors.length ? 'bad' : 'ok') : 'off'}`}>
+            {game.persisted ? (dbErrors.length ? '⚠ SUPABASE ERROR' : '● SUPABASE SAVED') : '○ NOT PERSISTED'}
+          </span>
         </div>
         <button className="pixel-btn tiny ghost" onClick={() => setMuted(sfx.toggle())} title="Sound">{muted ? '🔇' : '🔊'}</button>
       </div>
@@ -244,9 +258,11 @@ export default function GameScreen({
                 <span key={c} className="tag orange">{c}</span>
               ))}
             </div>
-            {decision && (
-              <div className="agent-source">
-                {decision.source === 'claude' ? `● Live: ${decision.model ?? 'Claude'} · ${((decision.latencyMs ?? 0) / 1000).toFixed(1)}s` : '○ Offline fallback strategist (no API key)'}
+            {meta && (
+              <div className={`agent-source ${live ? 'live' : 'offline'}`}>
+                {live
+                  ? `● LIVE ANTHROPIC CALL: ${meta.model ?? 'Claude'} · ${((meta.latencyMs ?? 0) / 1000).toFixed(1)}s${pending ? ` · ${pending.memory.count} memory notes from ${pending.memory.source}` : ''}`
+                  : `○ OFFLINE FALLBACK STRATEGIST — ${meta.error ?? 'no API key'}`}
               </div>
             )}
           </div>
@@ -274,6 +290,12 @@ export default function GameScreen({
       {phase === 'results' && record && showCard && <ResultsOverlay record={record} onNext={nextRound} last={game.status === 'finished'} />}
       {phase === 'day' && record && <DayReport game={game} day={record.day} onNext={nextRound} />}
       {err && phase === 'deciding' && status !== 'error' && <div className="toast">{err}</div>}
+      {dbErrors.length > 0 && (
+        <div className="db-error" onClick={() => setDbErrors([])}>
+          <b>SUPABASE PERSISTENCE FAILED</b>
+          {dbErrors.map((e) => <div key={e}>{e}</div>)}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import CafeScene from './CafeScene';
-import { api } from '../lib/api';
+import { api, type Health } from '../lib/api';
 import { onNewResult } from '../lib/realtime';
 import { sfx } from '../lib/sfx';
 
@@ -15,7 +15,7 @@ export default function TitleScreen({
   canResume: boolean;
   onStart: () => void;
   onResume: () => void;
-  health: { anthropic: boolean; model: string; supabase: boolean } | null;
+  health: Health | null;
 }) {
   const [lb, setLb] = useState<LB | null>(null);
   useEffect(() => {
@@ -65,9 +65,15 @@ export default function TitleScreen({
           )}
         </div>
         <div className="status-row">
-          <span className={`chip ${health?.anthropic ? 'on' : 'off'}`}>{health?.anthropic ? `● Claude agent live` : '○ Claude offline (fallback)'}</span>
-          <span className={`chip ${health?.supabase ? 'on' : 'off'}`}>{health?.supabase ? '● Supabase connected' : '○ Supabase not configured'}</span>
+          <span className={`chip ${health?.anthropic ? 'on' : 'off'}`}>{health?.anthropic ? `● Live Claude agent · ${health.model}` : '○ Claude offline (fallback)'}</span>
+          <span className={`chip ${health?.schema.ok ? 'on' : health?.supabase ? 'bad' : 'off'}`}>
+            {health?.schema.ok ? '● Supabase connected' : health?.supabase ? '⚠ Supabase schema error' : '○ Supabase not configured'}
+          </span>
         </div>
+        {health?.supabase && !health.schema.ok && (
+          <div className="schema-errors">{Object.entries(health.schema.tables).filter(([, v]) => v !== 'ok').map(([t, v]) => <div key={t}>{v}</div>)}</div>
+        )}
+        {lb?.error && <div className="schema-errors">{lb.error}</div>}
         {lb?.configured && (
           <div className="record">
             <div className="record-title">GLOBAL RECORD · LIVE</div>
