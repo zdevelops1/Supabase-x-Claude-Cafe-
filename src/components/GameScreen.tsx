@@ -167,7 +167,7 @@ export default function GameScreen({
           <button className="icon-btn" onClick={onQuit} title="Back to title">⌂</button>
           <div className="hud-score">
             <span>⚡ SUPABASE{identity && <em className="hud-id" title="Signed in as">{identity}</em>}</span>
-            <b><Num value={finalScore(game.cafes.supabase).total} /></b>
+            <b className="hud-cash" title="Supabase Café cash"><Num value={game.cafes.supabase.cash} fmt={money} /></b>
           </div>
         </div>
         <div className="hud-center">
@@ -197,7 +197,7 @@ export default function GameScreen({
         <div className="hud-side claude">
           <div className="hud-score">
             <span>CLAUDE ✻</span>
-            <b><Num value={finalScore(game.cafes.claude).total} /></b>
+            <b className="hud-cash" title="Claude Café cash"><Num value={game.cafes.claude.cash} fmt={money} /></b>
           </div>
           <MusicButton />
           <button className="icon-btn" onClick={() => setMuted(sfx.toggle())} title="Sound effects">{muted ? '🔇' : '🔊'}</button>

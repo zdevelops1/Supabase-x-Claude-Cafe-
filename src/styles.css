@@ -181,7 +181,6 @@ button { font-family: inherit; color: inherit; }
 .hud-side.claude .hud-score { align-items: flex-end; }
 .hud-side.claude .hud-score span { color: var(--orange); }
 .hud-score b { font-family: var(--pixel); font-size: 18px; color: var(--cream); margin-top: 4px; text-shadow: 2px 2px 0 #000; }
-.hud-score b::after { content: ' pts'; font-size: 9px; color: var(--muted); }
 .hud-center { display: flex; flex-direction: column; align-items: center; gap: 5px; }
 .hud-time { display: flex; gap: 8px; font-family: var(--pixel); font-size: 11px; flex-wrap: wrap; justify-content: center; }
 .hud-time > span { padding: 5px 9px; background: rgba(0, 0, 0, 0.4); border: 2px solid var(--gold-d); }
@@ -605,3 +604,9 @@ button { font-family: inherit; color: inherit; }
 .choice.picked::after { content: '✓ LOCKED IN'; position: absolute; right: 8px; top: -8px; padding: 2px 5px; background: var(--green-l); color: var(--ink); font-family: var(--pixel); font-size: 7px; line-height: 1.2; z-index: 2; }
 .choice.dim { opacity: 0.28; filter: grayscale(0.6); }
 @keyframes pickFlash { 0% { background: rgba(62, 207, 142, 0.6); } 100% { background: rgba(62, 207, 142, 0.24); } }
+
+/* HUD corners: cash is the headline number */
+.hud-score b.hud-cash { font-size: 24px; margin-top: 3px; letter-spacing: 1px; }
+.hud-side.supabase .hud-score b.hud-cash { color: #7dffb0; }
+.hud-side.claude .hud-score b.hud-cash { color: #ffc08a; }
+@media (min-width: 761px) and (max-height: 900px) { .hud-score b.hud-cash { font-size: 20px; } }
