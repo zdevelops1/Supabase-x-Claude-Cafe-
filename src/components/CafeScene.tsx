@@ -39,32 +39,56 @@ const R = (x: number, y: number, w: number, h: number, fill: string, key?: strin
 );
 
 /* ─────────────── people ─────────────── */
+/** Chibi customer sprite (12×20 grid) with dark outline + shading, sized to match the painted guests. */
 export function Person({ i, x, y, seated = false, flip = false }: { i: number; x: number; y: number; seated?: boolean; flip?: boolean }) {
+  const O = '#1b120c';
   const skin = SKINS[i % SKINS.length];
   const hair = HAIRS[(i * 3 + 1) % HAIRS.length];
   const shirt = SHIRTS[(i * 5 + 2) % SHIRTS.length];
-  const longHair = i % 3 === 1;
+  const long = i % 3 === 1;
+  const bun = i % 4 === 2;
   return (
-    <g transform={`translate(${x} ${y})${flip ? ' scale(-1 1) translate(-8 0)' : ''}`}>
-      {R(2, 0, 5, 2, hair)}
-      {R(1, 1, 1, 3, hair)}
-      {longHair && R(6, 2, 1, 5, hair)}
-      {longHair && R(1, 3, 1, 4, hair)}
-      {R(2, 2, 5, 4, skin)}
-      {R(3, 4, 1, 1, '#1d1d1d')}
-      {R(5, 4, 1, 1, '#1d1d1d')}
-      {R(1, 6, 7, 6, shirt)}
-      {R(1, 6, 7, 1, 'rgba(255,255,255,0.18)')}
-      {R(0, 7, 1, 4, skin)}
-      {R(8, 7, 1, 4, skin)}
+    <g transform={`translate(${x} ${y})${flip ? ' scale(-1 1) translate(-12 0)' : ''}`}>
+      {/* head */}
+      {bun && R(4, -2, 4, 3, O)}
+      {bun && R(5, -1, 2, 2, hair)}
+      {R(1, 0, 10, 10, O)}
+      {R(2, 1, 8, 4, hair)}
+      {R(2, 3, 8, 6, skin)}
+      {R(2, 3, 8, 1, hair)}
+      {R(2, 4, 1, 3, hair)}
+      {R(9, 4, 1, 3, hair)}
+      {long && R(1, 5, 1, 7, O)}
+      {long && R(10, 5, 1, 7, O)}
+      {long && R(2, 7, 1, 4, hair)}
+      {long && R(9, 7, 1, 4, hair)}
+      {R(4, 5, 1, 2, '#1d1d1d')}
+      {R(7, 5, 1, 2, '#1d1d1d')}
+      {R(4, 5, 1, 1, '#ffffff')}
+      {R(7, 5, 1, 1, '#ffffff')}
+      {R(3, 7, 1, 1, '#f2a3a0')}
+      {R(8, 7, 1, 1, '#f2a3a0')}
+      {R(5, 8, 2, 1, '#b4584c')}
+      {R(3, 1, 3, 1, 'rgba(255,255,255,0.22)')}
+      {/* body */}
+      {R(1, 10, 10, seated ? 6 : 7, O)}
+      {R(2, 10, 8, seated ? 5 : 6, shirt)}
+      {R(2, seated ? 13 : 14, 8, 2, 'rgba(0,0,0,0.22)')}
+      {R(5, 10, 2, 1, 'rgba(255,255,255,0.7)')}
+      {R(1, 13, 1, 2, skin)}
+      {R(10, 13, 1, 2, skin)}
       {seated ? (
-        R(2, 12, 6, 2, '#2c3e50')
+        <>
+          {R(2, 15, 8, 2, O)}
+          {R(3, 15, 6, 1, '#2c3e50')}
+        </>
       ) : (
         <>
-          {R(2, 12, 2, 4, '#2c3e50')}
-          {R(5, 12, 2, 4, '#2c3e50')}
-          {R(2, 16, 2, 1, '#111')}
-          {R(5, 16, 2, 1, '#111')}
+          {R(2, 16, 8, 4, O)}
+          {R(3, 16, 2, 3, '#2c3e50')}
+          {R(7, 16, 2, 3, '#2c3e50')}
+          {R(3, 19, 2, 1, '#0d0d0d')}
+          {R(7, 19, 2, 1, '#0d0d0d')}
         </>
       )}
     </g>
@@ -392,6 +416,52 @@ function Rug({ t, side }: { t: Theme; side: Side }) {
   );
 }
 
+/* ─────────────── illustrated scene + live overlay layer ───────────────
+ * The café interiors are the project's own concept art (public/art/*.webp, cropped so no
+ * baked-in UI remains). Everything dynamic is drawn on top in the art's own coordinate
+ * space (665×486): walk-in customers (count = customers served), extra seated guests
+ * (driven by market share), lamp/candle flicker, espresso steam, the robot's "thinking"
+ * glow and a register flash when a round resolves.
+ */
+type Pt = { x: number; y: number };
+const ART: Record<Side, {
+  src: string;
+  queue: Pt[]; // feet positions for walk-in customers
+  seats: Pt[]; // empty armchairs (sprite top-left)
+  lamps: Array<Pt & { r: number }>;
+  steam: Pt;
+  barista: Pt;
+  register: Pt;
+  enter: number; // x the walkers come from
+}> = {
+  supabase: {
+    src: '/art/supabase-cafe.webp',
+    queue: [{ x: 430, y: 356 }, { x: 386, y: 360 }, { x: 342, y: 356 }, { x: 604, y: 350 }, { x: 298, y: 362 }, { x: 646, y: 356 }],
+    seats: [{ x: 386, y: 404 }, { x: 524, y: 408 }],
+    lamps: [{ x: 258, y: 32, r: 46 }, { x: 604, y: 36, r: 46 }, { x: 66, y: 138, r: 40 }, { x: 360, y: 452, r: 30 }, { x: 585, y: 458, r: 30 }],
+    steam: { x: 516, y: 150 },
+    barista: { x: 466, y: 168 },
+    register: { x: 440, y: 222 },
+    enter: 700,
+  },
+  claude: {
+    src: '/art/claude-cafe.webp',
+    queue: [{ x: 250, y: 356 }, { x: 294, y: 360 }, { x: 338, y: 356 }, { x: 58, y: 350 }, { x: 382, y: 362 }, { x: 20, y: 356 }],
+    seats: [{ x: 110, y: 404 }, { x: 238, y: 408 }],
+    lamps: [{ x: 60, y: 34, r: 46 }, { x: 406, y: 36, r: 46 }, { x: 598, y: 146, r: 40 }, { x: 76, y: 458, r: 30 }, { x: 302, y: 454, r: 30 }],
+    steam: { x: 236, y: 176 },
+    barista: { x: 195, y: 166 },
+    register: { x: 222, y: 224 },
+    enter: -40,
+  },
+};
+
+const SLOT_TINT: Record<Slot, { color: string; opacity: number; blend: string }> = {
+  Morning: { color: '#fff3d6', opacity: 0.1, blend: 'soft-light' },
+  Afternoon: { color: '#ff9d4a', opacity: 0.1, blend: 'soft-light' },
+  Evening: { color: '#0b1030', opacity: 0.12, blend: 'multiply' },
+};
+
 export default function CafeScene({
   side,
   slot,
@@ -399,6 +469,7 @@ export default function CafeScene({
   seated,
   busy = false,
   bump = 0,
+  cover = false,
 }: {
   side: Side;
   slot: Slot;
@@ -406,134 +477,114 @@ export default function CafeScene({
   seated: number;
   busy?: boolean;
   bump?: number;
+  /** Fill the box edge-to-edge (title/final backdrops) instead of fitting the whole interior. */
+  cover?: boolean;
 }) {
+  const a = ART[side];
   const t = THEMES[side];
-  const doorX = side === 'supabase' ? -14 : 254;
-  const queueSlots = [118, 104, 132, 90, 146, 76, 160];
-  const q = Math.max(0, Math.min(queueSlots.length, queue));
-  const tables = [
-    { x: 30, y: 104 },
-    { x: 90, y: 126 },
-    { x: 136, y: 126 },
-    { x: 196, y: 104 },
-  ];
-  const s = Math.max(0, Math.min(8, seated));
-  const order = [1, 2, 0, 3]; // fill center tables first
-
+  const q = Math.max(0, Math.min(a.queue.length, queue));
+  const extra = Math.max(0, Math.min(a.seats.length, seated));
+  const tint = SLOT_TINT[slot];
+  const S = 3.3; // sprite scale → ~66px chibis, matching the painted guests
   return (
-    <svg className={`cafe-scene ${side}`} viewBox="0 0 240 150" shapeRendering="crispEdges" preserveAspectRatio="xMidYMid slice" role="img" aria-label={`${t.sign} interior`}>
+    <span className={`scene-art ${side}`} style={{ backgroundImage: `url(${a.src})` }}>
+    <svg className={`cafe-scene art ${side}`} viewBox="0 0 665 486" preserveAspectRatio={cover ? (side === 'supabase' ? 'xMaxYMid slice' : 'xMinYMid slice') : side === 'supabase' ? 'xMaxYMid meet' : 'xMinYMid meet'} role="img" aria-label={`${t.sign} interior`}>
       <defs>
-        <radialGradient id={`glow-${side}`} cx="50%" cy="35%" r="70%">
-          <stop offset="0%" stopColor="#ffe3a0" stopOpacity="0.16" />
-          <stop offset="100%" stopColor="#000" stopOpacity="0.28" />
+        <radialGradient id={`lamp-${side}`}>
+          <stop offset="0%" stopColor="#ffe7a8" stopOpacity="0.55" />
+          <stop offset="45%" stopColor="#ffcf73" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#ffcf73" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id={`think-${side}`}>
+          <stop offset="0%" stopColor="#ffb38a" stopOpacity="0.75" />
+          <stop offset="55%" stopColor="#e8875f" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="#e8875f" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id={`vig-${side}`} cx="50%" cy="45%" r="75%">
+          <stop offset="60%" stopColor="#000" stopOpacity="0" />
+          <stop offset="100%" stopColor="#000" stopOpacity="0.38" />
         </radialGradient>
       </defs>
 
-      {/* wall */}
-      {R(0, 0, 240, 88, t.wall)}
-      {Array.from({ length: 12 }, (_, i) => R(i * 20 + 4, 4, 12, 40, t.wallMid, `wp${i}`))}
-      {Array.from({ length: 12 }, (_, i) => R(i * 20 + 4, 4, 12, 1, GOLD_D, `wpt${i}`, { opacity: 0.6 }))}
-      {R(0, 0, 240, 2, GOLD_D)}
-      {/* wainscot */}
-      {R(0, 54, 240, 34, t.wallDark)}
-      {R(0, 54, 240, 1, GOLD)}
-      {Array.from({ length: 12 }, (_, i) => R(i * 20 + 3, 58, 14, 24, t.panel, `wn${i}`))}
-      {R(0, 86, 240, 2, GOLD_D)}
+      <image href={a.src} x={0} y={0} width={665} height={486} preserveAspectRatio="none" />
 
-      <Window x={6} slot={slot} />
-      <Window x={206} slot={slot} />
-      <MenuBoard x={40} t={t} />
-      <MenuBoard x={172} t={t} />
-      <Sconce x={36} y={34} />
-      <Sconce x={200} y={34} />
-
-      {/* signage */}
-      <g>
-        {R(80, 2, 80, 38, GOLD_D)}
-        {R(81, 3, 78, 36, t.wallDark)}
-        {R(83, 5, 74, 32, t.wall)}
-        {R(83, 5, 74, 1, GOLD)}
-        {R(83, 36, 74, 1, GOLD)}
-        <g transform="translate(113 7)">
-          <Logo side={side} s={0.62} />
-        </g>
-        <text x={120} y={28.5} textAnchor="middle" className="sign-text" fill={t.accent}>{t.sign}</text>
-        <text x={120} y={34.5} textAnchor="middle" className="sign-sub" fill={GOLD_L}>{t.tagline}</text>
+      {/* warm light flicker */}
+      <g className="lights" style={{ mixBlendMode: 'screen' } as React.CSSProperties}>
+        {a.lamps.map((l, i) => (
+          <circle key={i} cx={l.x} cy={l.y} r={l.r} fill={`url(#lamp-${side})`} className="glow" style={{ animationDelay: `${(i * 0.7) % 3}s` }} />
+        ))}
       </g>
 
-      <Lamp x={66} len={2} />
-      <Lamp x={172} len={2} />
+      {/* espresso steam */}
+      <g className="steam-wisps" transform={`translate(${a.steam.x} ${a.steam.y})`}>
+        {[0, 1, 2].map((i) => (
+          <rect key={i} x={i * 5 - 5} y={0} width={3} height={6} fill="#fff" className="wisp" style={{ animationDelay: `${i * 0.55}s` }} />
+        ))}
+      </g>
 
-      <Shelf x={98} t={t} />
-
-      {/* barista */}
-      <g transform="translate(113 47)">{side === 'claude' ? <RobotBarista t={t} busy={busy} /> : <HumanBarista t={t} />}</g>
-
-      <Floor />
-      <Rug t={t} side={side} />
-
-      <Counter t={t}>
-        <EspressoMachine x={62} />
-        <PastryCase x={150} />
-        <Register x={130} t={t} ching={!!bump} />
-        {R(88, 58, 4, 4, CREAM)}
-        {R(94, 58, 4, 4, CREAM)}
-        {R(100, 59, 3, 3, t.accent)}
-        {R(57, 54, 6, 8, GOLD, 'tipjar', { opacity: 0.85 })}
-      </Counter>
-
-      {/* queue of walk-in customers (count = customers this café served) */}
-      {Array.from({ length: q }, (_, i) => (
-        <g
-          key={`q-${i}-${queue}-${bump}`}
-          className="walker"
-          style={{ ['--from' as string]: `${doorX - queueSlots[i]}px`, animationDelay: `${i * 0.18}s` } as React.CSSProperties}
-        >
-          <g transform={`translate(${queueSlots[i]} ${86 + (i % 2) * 3})`}>
-            <g className="bob" style={{ animationDelay: `${i * 0.13}s` }}>
-              <Person i={i + (side === 'claude' ? 4 : 0)} x={0} y={0} />
-            </g>
+      {/* robot thinking glow / barista sparkle */}
+      {side === 'claude' && busy && (
+        <g>
+          <circle cx={a.barista.x} cy={a.barista.y} r={52} fill={`url(#think-${side})`} className="think-pulse" style={{ mixBlendMode: 'screen' } as React.CSSProperties} />
+          <g transform={`translate(${a.barista.x - 10} ${a.barista.y - 62})`} className="think-dots">
+            <rect x={0} y={0} width={5} height={5} fill="#ffc2a3" />
+            <rect x={9} y={0} width={5} height={5} fill="#ffc2a3" />
+            <rect x={18} y={0} width={5} height={5} fill="#ffc2a3" />
           </g>
         </g>
-      ))}
+      )}
+      {side === 'supabase' && (
+        <g className="sparkle" transform={`translate(${a.barista.x + 26} ${a.barista.y - 30})`}>
+          <rect x={2} y={0} width={2} height={6} fill="#c9ffe6" />
+          <rect x={0} y={2} width={6} height={2} fill="#c9ffe6" />
+        </g>
+      )}
 
-      {/* tables + seated guests (fill = market share) */}
-      {tables.map((tb, i) => {
-        const rank = order.indexOf(i);
-        return <Table key={i} x={tb.x} y={tb.y} t={t} guests={Math.max(0, Math.min(2, s - rank * 2))} startIdx={i * 2 + (side === 'claude' ? 9 : 1)} />;
-      })}
+      {/* register flash when a round resolves */}
+      {bump > 0 && (
+        <circle key={`flash-${bump}`} cx={a.register.x} cy={a.register.y} r={34} fill={`url(#lamp-${side})`} className="register-flash" style={{ mixBlendMode: 'screen' } as React.CSSProperties} />
+      )}
 
-      <Plant x={1} y={102} tall flower={side === 'claude' ? t.flower : undefined} />
-      <Plant x={228} y={102} tall flower={side === 'claude' ? t.flower : undefined} />
-      <Plant x={46} y={62} flower={t.flower} />
-      <Plant x={185} y={62} flower={t.flower} />
-      <Plant x={2} y={148} />
-      <Plant x={228} y={148} />
+      {/* extra seated guests: tables fill as market share grows */}
+      <g shapeRendering="crispEdges">
+        {a.seats.slice(0, extra).map((p, i) => (
+          <g key={`seat-${i}-${bump}`} className="seat-in" transform={`translate(${p.x} ${p.y}) scale(${S})`}>
+            <Person i={i * 3 + (side === 'claude' ? 5 : 2)} x={0} y={0} seated flip={side === 'supabase' ? i === 0 : i === 1} />
+          </g>
+        ))}
+      </g>
 
-      {/* lighting */}
-      <rect x={0} y={0} width={240} height={150} fill={`url(#glow-${side})`} />
-      {slot === 'Evening' && <rect x={0} y={0} width={240} height={150} fill="#0b1030" opacity={0.16} />}
-      {slot === 'Afternoon' && <rect x={0} y={0} width={240} height={150} fill="#ff9a3c" opacity={0.05} />}
+      {/* walk-in customers (count = customers this café served) */}
+      <g shapeRendering="crispEdges">
+        {a.queue.slice(0, q).map((p, i) => (
+          <g
+            key={`q-${i}-${queue}-${bump}`}
+            className="walker"
+            style={{ ['--from' as string]: `${a.enter - p.x}px`, animationDelay: `${i * 0.16}s` } as React.CSSProperties}
+          >
+            <ellipse cx={p.x} cy={p.y} rx={17} ry={5} fill="#000" opacity={0.3} />
+            <g transform={`translate(${p.x - 19.8} ${p.y - 66}) scale(${S})`}>
+              <g className="bob" style={{ animationDelay: `${i * 0.13}s` }}>
+                <Person i={i + (side === 'claude' ? 4 : 0)} x={0} y={0} flip={side === 'claude'} />
+              </g>
+            </g>
+          </g>
+        ))}
+      </g>
+
+      {/* time of day + soft vignette */}
+      <rect x={0} y={0} width={665} height={486} fill={tint.color} opacity={tint.opacity} style={{ mixBlendMode: tint.blend } as React.CSSProperties} />
+      <rect x={0} y={0} width={665} height={486} fill={`url(#vig-${side})`} />
     </svg>
+    </span>
   );
 }
 
 /* ─────────────── portraits for UI panels ─────────────── */
 export function Portrait({ side, busy = false }: { side: Side; busy?: boolean }) {
-  const t = THEMES[side];
   return (
-    <svg className={`portrait ${side}`} viewBox="0 0 24 24" shapeRendering="crispEdges" aria-hidden="true">
-      {R(0, 0, 24, 24, t.wallDark)}
-      {R(0, 18, 24, 6, t.wall)}
-      {side === 'supabase' ? (
-        <g transform="translate(5 6)">
-          <HumanBarista t={t} />
-        </g>
-      ) : (
-        <g transform="translate(5 9)">
-          <RobotBarista t={t} busy={busy} />
-        </g>
-      )}
-    </svg>
+    <span className={`portrait ${side} ${busy ? 'busy' : ''}`} aria-hidden="true">
+      <img src={side === 'supabase' ? '/art/barista.webp' : '/art/robot.webp'} alt="" draggable={false} />
+    </span>
   );
 }

@@ -8,6 +8,8 @@ import type { Difficulty, GameState } from './engine/types';
 import { api } from './lib/api';
 import { auth, supa, type Player } from './lib/auth';
 import { setStorageOwner, storage, type SaveData } from './lib/storage';
+import { music } from './lib/music';
+import MusicButton from './components/MusicButton';
 
 type Screen = { name: 'title' } | { name: 'difficulty' } | { name: 'game'; save: SaveData } | { name: 'final'; game: GameState };
 
@@ -51,6 +53,10 @@ export default function App() {
       setSaved(local);
       return local;
     }
+  }, []);
+
+  useEffect(() => {
+    music.armAutostart();
   }, []);
 
   useEffect(() => {
@@ -174,6 +180,7 @@ export default function App() {
           onTitle={() => { storage.clear(); setSaved(null); setScreen({ name: 'title' }); }}
         />
       )}
+      {screen.name !== 'game' && <MusicButton className="floating" />}
       {dialog && <AuthDialog mode={dialog} onDone={onAuthDone} onClose={() => setDialog(null)} />}
       {err && <div className="toast" onClick={() => setErr(null)}>{err}</div>}
     </div>

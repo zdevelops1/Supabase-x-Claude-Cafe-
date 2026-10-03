@@ -37,10 +37,10 @@ export default function FinalScreen({ game, onPlayAgain, onTitle }: { game: Game
     <div className="final-screen">
       <div className="final-bg">
         <div className={`title-half left ${show && w === 'supabase' ? 'winner-glow' : ''}`}>
-          <CafeScene side="supabase" slot="Evening" queue={w === 'supabase' ? 7 : 2} seated={w === 'supabase' ? 8 : 3} />
+          <CafeScene cover side="supabase" slot="Evening" queue={w === 'supabase' ? 7 : 2} seated={w === 'supabase' ? 8 : 3} />
         </div>
         <div className={`title-half right ${show && w === 'claude' ? 'winner-glow' : ''}`}>
-          <CafeScene side="claude" slot="Evening" queue={w === 'claude' ? 7 : 2} seated={w === 'claude' ? 8 : 3} />
+          <CafeScene cover side="claude" slot="Evening" queue={w === 'claude' ? 7 : 2} seated={w === 'claude' ? 8 : 3} />
         </div>
         <div className="title-vignette" />
       </div>

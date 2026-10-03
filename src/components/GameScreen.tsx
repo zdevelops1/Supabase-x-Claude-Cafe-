@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import CafePanel from './CafePanel';
 import { Portrait } from './CafeScene';
+import MusicButton from './MusicButton';
 import { currentScenario, dayTotals, describeEffect, finalScore, findAction } from '../engine/engine';
 import { SCENARIOS, TOTAL_ROUNDS } from '../engine/scenarios';
 import type { ClaudeDecision, GameState, RoundRecord, RoundResult } from '../engine/types';
@@ -188,7 +189,8 @@ export default function GameScreen({
             <span>CLAUDE ✻</span>
             <b><Num value={finalScore(game.cafes.claude).total} /></b>
           </div>
-          <button className="icon-btn" onClick={() => setMuted(sfx.toggle())} title="Sound">{muted ? '🔇' : '🔊'}</button>
+          <MusicButton />
+          <button className="icon-btn" onClick={() => setMuted(sfx.toggle())} title="Sound effects">{muted ? '🔇' : '🔊'}</button>
         </div>
       </header>
 

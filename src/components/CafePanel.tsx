@@ -36,8 +36,9 @@ export default function CafePanel({
 }) {
   const isHuman = side === 'supabase';
   const customers = last?.customers ?? 70;
-  const queue = Math.round(customers / 20);
-  const seated = last ? Math.round(last.share * 13) : 5; // tables fill with market share
+  const queue = Math.round(customers / 20); // walk-ins scale with customers served
+  // Empty armchairs fill as market share grows (0 / 1 / 2 extra seated guests).
+  const seated = last ? (last.share >= 0.42 ? 1 : 0) + (last.share >= 0.55 ? 1 : 0) : 1;
 
   return (
     <section className={`cafe-panel ${side}`}>

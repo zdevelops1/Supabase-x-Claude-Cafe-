@@ -87,6 +87,10 @@ Import the repo → framework **Vite** → add the env vars above → deploy. `n
 5. A few rounds in, point at **Claude's notebook** — it's writing notes about *you*.
 6. Finish the day → day report; finish Day 4 → final scoreboard with the transparent formula. Claude can and does win.
 
+## Art & music
+- **Café interiors** are the project's own concept art (`public/art/*.webp`), cropped so no static UI from the concept remains. Everything dynamic (walk-in customers by customers served, extra seated guests by market share, lamp flicker, espresso steam, Claude's thinking glow, register flash, floaters, stats) is a live SVG layer drawn in the art's coordinate space.
+- **Music:** J.S. Bach, *Prelude in C major, BWV 846* (1722, public domain), performed live in the browser by a synthesized piano (WebAudio) — no recording, nothing to license. Starts after the first click (autoplay rules), ♪ toggle remembers the choice.
+
 ## Accounts (Guest + email/password)
 - **PLAY AS GUEST** → `supabase.auth.signInAnonymously()`; full game, refresh-safe on the same browser.
 - **CREATE ACCOUNT / SIGN IN** → email + password. A guest who creates an account is converted in place (`updateUser`), keeping the same user id and active game.

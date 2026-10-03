@@ -47,10 +47,10 @@ export default function TitleScreen({
     <div className="title-screen">
       <div className="title-bg">
         <div className="title-half left">
-          <CafeScene side="supabase" slot="Evening" queue={4} seated={7} />
+          <CafeScene cover side="supabase" slot="Evening" queue={4} seated={7} />
         </div>
         <div className="title-half right">
-          <CafeScene side="claude" slot="Evening" queue={4} seated={7} busy />
+          <CafeScene cover side="claude" slot="Evening" queue={4} seated={7} busy />
         </div>
         <div className="title-vignette" />
       </div>
