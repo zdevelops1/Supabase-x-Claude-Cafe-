@@ -453,8 +453,9 @@ button { font-family: inherit; color: inherit; }
   .share-plate, .nameplate { display: none; }
   .event-box { grid-template-columns: 1fr; }
   .event-portrait, .event-side { display: none; }
-  .hud-bar { grid-template-columns: 1fr; }
-  .hud-side { display: none; }
+  .hud-bar { grid-template-columns: auto 1fr auto; gap: 6px; padding: 4px 6px; }
+  .hud-score { display: none; }
+  .hud-status { flex-wrap: wrap; justify-content: center; }
   .choice-label { font-size: 8px; }
   .results-cols, .final-cols { grid-template-columns: 1fr; }
   .reveal-banner { flex-direction: column; width: 90vw; }
@@ -535,3 +536,6 @@ button { font-family: inherit; color: inherit; }
 .auth-links { display: flex; justify-content: space-between; gap: 10px; }
 .auth-links button { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 17px; }
 .auth-links button:hover { color: var(--gold-l); }
+
+.hud-id-m { display: none; }
+@media (max-width: 760px) { .hud-id-m { display: inline-block; color: var(--gold-l); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }

@@ -87,6 +87,13 @@ Import the repo → framework **Vite** → add the env vars above → deploy. `n
 5. A few rounds in, point at **Claude's notebook** — it's writing notes about *you*.
 6. Finish the day → day report; finish Day 4 → final scoreboard with the transparent formula. Claude can and does win.
 
+## Accounts (Guest + email/password)
+- **PLAY AS GUEST** → `supabase.auth.signInAnonymously()`; full game, refresh-safe on the same browser.
+- **CREATE ACCOUNT / SIGN IN** → email + password. A guest who creates an account is converted in place (`updateUser`), keeping the same user id and active game.
+- The API verifies the Supabase access token server-side and stamps `user_id` on sessions, rounds, memories and results; every game route checks ownership. RLS gives signed-in users owner-only reads; all writes stay service-role only (`supabase/migrations/20261003120000_auth_ownership.sql`).
+- Supabase Auth settings used: *Allow anonymous sign-ins* ON; *Confirm email* OFF for the hackathon (turn back on afterwards).
+- `/authtest.html?run=1` runs the guest/account/isolation matrix against a deployment (requires `ENABLE_DIAGNOSTICS=1`).
+
 ## Live verification (Phase 2)
 With the env vars set on the server (plus `AGENT_FALLBACK=off`, `ENABLE_DIAGNOSTICS=1`):
 ```bash

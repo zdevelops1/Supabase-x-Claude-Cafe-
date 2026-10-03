@@ -177,6 +177,7 @@ export default function GameScreen({
             <span className={`hud-agent ${meta ? (live ? 'live' : 'offline') : 'pending'}`}>
               {meta ? (live ? `● LIVE CLAUDE · ${meta.model}` : '○ OFFLINE FALLBACK') : '◌ CONNECTING CLAUDE'}
             </span>
+            {identity && <span className="hud-id-m">{identity === 'GUEST' ? '👤 GUEST' : `☕ ${identity}`}</span>}
             <span className={`hud-db ${game.persisted ? (dbErrors.length ? 'bad' : 'ok') : 'off'}`}>
               {game.persisted ? (dbErrors.length ? '⚠ SUPABASE ERROR' : '● SUPABASE SAVED') : '○ NOT PERSISTED'}
             </span>
