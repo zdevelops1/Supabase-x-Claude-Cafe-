@@ -3,6 +3,8 @@
 > **Hackathon theme: “Build Something Agents Want.”**
 > You run **Supabase Café**. Across the street, an autonomous **Claude agent** runs **Claude Café**. Both businesses face the same market and the same events — but Claude independently observes its business, reasons about what to do, remembers previous rounds, and competes against you. Higher difficulty = more context and strategic memory for the agent.
 
+**Live demo:** https://supabase-x-claude-cafe.vercel.app
+
 A pixel-art, split-screen café business battle: 4 days × 3 scenarios = **12 rounds**. Each round you pick A/B/C/D, Claude picks its own move (sealed — it can't see yours), and a **deterministic engine** referees both outcomes in a **shared market** where customers choose between the two cafés.
 
 ---
