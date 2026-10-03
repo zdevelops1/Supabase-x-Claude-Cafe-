@@ -16,8 +16,11 @@ const pass = (k, m = '') => { if (!String(R[k] ?? '').startsWith('FAIL')) R[k] =
 const fail = (k, m) => { R[k] = 'FAIL — ' + m; log('✗', k, m); };
 
 const h = await fetch('/api/health').then((r) => r.json());
-if (!h.diagnostics) { st.textContent = 'DISABLED — diagnostics are off (ENABLE_DIAGNOSTICS=0). Nothing was run.'; throw 0; }
-if (!new URLSearchParams(location.search).has('run')) { st.textContent = 'READY — append ?run=1 to run the auth matrix (creates test users, makes live Claude calls).'; throw 0; }
+const enabled = h.diagnostics && new URLSearchParams(location.search).has('run');
+if (!h.diagnostics) st.textContent = 'DISABLED — diagnostics are off (ENABLE_DIAGNOSTICS=0). Nothing was run.';
+else if (!enabled) st.textContent = 'READY — append ?run=1 to run the auth matrix (creates test users, makes live Claude calls).';
+if (enabled) await main();
+async function main() {
 st.textContent = 'RUNNING…';
 
 const cfg = await fetch('/api/config').then((r) => r.json());
@@ -139,4 +142,5 @@ try {
 const failed = Object.values(R).some((v) => String(v).startsWith('FAIL')) || R.crash;
 st.textContent = failed ? 'DONE — FAILURES' : 'DONE — ALL PASS';
 out.textContent = 'RESULT ' + JSON.stringify(R, null, 2);
+}
 </script></body></html>
