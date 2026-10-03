@@ -577,17 +577,31 @@ button { font-family: inherit; color: inherit; }
 .music-btn.on .music-bars i:nth-child(3) { animation-delay: 0.4s; }
 .music-btn.floating { position: fixed; top: 12px; right: 12px; z-index: 60; }
 
-/* ── Money pop (round result) ── */
-.money-pop { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 46; display: flex; gap: 18px; pointer-events: none; }
-.mp-card { min-width: 220px; padding: 14px 20px 16px; text-align: center; font-family: var(--pixel); background: rgba(8, 16, 20, 0.94); box-shadow: 0 0 0 4px var(--ink), 0 0 0 7px currentColor, 0 0 60px rgba(0, 0, 0, 0.85); animation: mpPop 0.42s cubic-bezier(.2, 1.6, .4, 1) both; }
-.mp-card small { display: block; font-size: 9px; letter-spacing: 1px; color: var(--cream, #ece6d6); opacity: .8; margin-bottom: 6px; }
-.mp-card .mp-head { display: block; font-size: 14px; margin-bottom: 4px; letter-spacing: 1px; }
-.mp-card b { display: block; font-size: 34px; line-height: 1.1; text-shadow: 3px 3px 0 #000; }
-.mp-card.gain { color: #5dff8f; }
-.mp-card.gain b { text-shadow: 3px 3px 0 #000, 0 0 18px rgba(93, 255, 143, .55); }
-.mp-card.loss { color: #ff4f5e; }
-.mp-card.loss b { text-shadow: 3px 3px 0 #000, 0 0 18px rgba(255, 79, 94, .5); }
-.mp-card.even { color: #c9c1ad; }
-@keyframes mpPop { 0% { transform: scale(.3); opacity: 0; } 70% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
-@media (max-width: 760px) { .money-pop { flex-direction: column; gap: 12px; } .mp-card { min-width: 200px; } .mp-card b { font-size: 28px; } }
-@media (max-height: 800px) { .mp-card b { font-size: 28px; } .mp-card { padding: 10px 16px 12px; } }
+/* ── Money pop (round result): CLICK → IMPACT → CONSEQUENCE ── */
+.money-pop { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 46; display: flex; flex-direction: column; align-items: center; gap: 14px; pointer-events: none; animation: mpOut 0.2s ease-in 0.8s forwards; }
+.money-pop::before { content: ''; position: fixed; inset: -100vmax; background: radial-gradient(circle at center, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.15) 45%, transparent 70%); z-index: -1; }
+.mp-main, .mp-sub { text-align: center; font-family: var(--pixel); }
+.mp-main .mp-head { display: block; font-size: 30px; letter-spacing: 2px; margin-bottom: 6px; text-shadow: 3px 3px 0 #000; }
+.mp-main b { display: block; font-size: 84px; line-height: 1; text-shadow: 5px 5px 0 #000, 0 0 30px currentColor; }
+.mp-main small, .mp-sub small { display: block; font-size: 11px; letter-spacing: 2px; color: #ece6d6; margin-top: 10px; text-shadow: 2px 2px 0 #000; }
+.mp-sub { padding: 8px 18px 10px; background: rgba(8, 16, 20, 0.92); box-shadow: 0 0 0 3px var(--ink), 0 0 0 6px currentColor; animation: mpPop 0.3s cubic-bezier(.2, 1.6, .4, 1) 0.25s both; }
+.mp-sub small { margin: 0 0 4px; font-size: 9px; }
+.mp-sub b { display: block; font-size: 34px; line-height: 1.1; text-shadow: 3px 3px 0 #000; }
+.mp-main.gain, .mp-sub.gain { color: #5dff8f; }
+.mp-main.loss, .mp-sub.loss { color: #ff4f5e; }
+.mp-main.even, .mp-sub.even { color: #c9c1ad; }
+.mp-main.gain, .mp-main.even { animation: mpPop 0.38s cubic-bezier(.2, 1.7, .4, 1) both; }
+.mp-main.loss { animation: mpHit 0.45s ease-out both; }
+@keyframes mpPop { 0% { transform: scale(.2); opacity: 0; } 65% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes mpHit { 0% { transform: scale(1.6); opacity: 0; } 30% { transform: scale(1); opacity: 1; } 45% { transform: translateX(-12px); } 60% { transform: translateX(10px); } 75% { transform: translateX(-6px); } 90% { transform: translateX(3px); } 100% { transform: none; opacity: 1; } }
+@keyframes mpOut { to { opacity: 0; transform: translate(-50%, -50%) scale(0.85); } }
+@media (max-width: 760px) { .mp-main b { font-size: 56px; } .mp-main .mp-head { font-size: 20px; } .mp-sub b { font-size: 26px; } }
+@media (max-height: 800px) { .mp-main b { font-size: 68px; } }
+
+/* Click acknowledgement: the chosen card presses in instantly, the rest lock. */
+.choice:active:not(:disabled) { transform: translateY(2px) scale(0.98); }
+.choice.picked { transform: translateY(2px) scale(0.985); border-color: var(--green-l); box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.45), 0 0 0 2px var(--green-l), 0 0 22px rgba(62, 207, 142, 0.6); animation: pickFlash 0.35s steps(3) 1; }
+.choice.picked .choice-key { background: linear-gradient(180deg, #fff, var(--green-l)); }
+.choice.picked::after { content: '✓ LOCKED IN'; position: absolute; right: 8px; top: -8px; padding: 2px 5px; background: var(--green-l); color: var(--ink); font-family: var(--pixel); font-size: 7px; line-height: 1.2; z-index: 2; }
+.choice.dim { opacity: 0.28; filter: grayscale(0.6); }
+@keyframes pickFlash { 0% { background: rgba(62, 207, 142, 0.6); } 100% { background: rgba(62, 207, 142, 0.24); } }

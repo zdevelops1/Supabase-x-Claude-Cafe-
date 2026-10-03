@@ -85,6 +85,7 @@ export default function GameScreen({
 
   // Both locked in → server unseals Claude's move and referees; then we play the reveal.
   const resolvingFor = useRef<number>(-1);
+  const pickedRef = useRef(false);
   useEffect(() => {
     if (!choice || !pending || resolvingFor.current === game.roundIndex) return;
     resolvingFor.current = game.roundIndex;
@@ -94,26 +95,29 @@ export default function GameScreen({
       try {
         const out = await api.resolve(g, choice, pending.sealed);
         setDbErrors(out.persistErrors ?? []);
+        // 1) IMPACT: the player's real engine profit, dead centre, first thing they see.
+        setRecord(out.record);
+        setPhase('money');
+        const ps = (n: number) => (n > 0 ? sfx.chaChing : n < 0 ? sfx.loss : () => {});
+        ps(out.record.player.profit)(0, 0.055);
+        ps(out.record.claude.profit)(0.25, 0.032);
+        await new Promise((r) => setTimeout(r, 1000));
+        // 2) Claude's sealed move is revealed.
         setRevealed(out.record.claudeDecision);
         setStatus('revealed');
         setPhase('revealing');
         sfx.reveal();
-        await new Promise((r) => setTimeout(r, 2200));
-        // Money pop: the real engine profit (= cash change) for each café, ~0.75s.
-        setRecord(out.record);
-        setPhase('money');
-        const ps = (n: number) => (n > 0 ? sfx.chaChing : n < 0 ? sfx.loss : () => {});
-        ps(out.record.player.profit)(0, 0.05);
-        ps(out.record.claude.profit)(0.2, 0.035);
-        await new Promise((r) => setTimeout(r, 750));
+        await new Promise((r) => setTimeout(r, 1400));
+        // 3) CONSEQUENCE: board updates, floaters + customers, then the detailed card.
         setGame(out.state);
         setFloaterKey(out.record.index + 1);
         storage.save({ state: out.state });
         setPhase('results');
         setShowCard(false);
-        setTimeout(() => setShowCard(true), 1300); // let floaters + customers land first
+        setTimeout(() => setShowCard(true), 1100); // let floaters + customers land first
       } catch (e) {
         resolvingFor.current = -1;
+        pickedRef.current = false;
         setErr(String((e as Error).message));
         setPhase('deciding');
         setStatus('locked');
@@ -133,6 +137,7 @@ export default function GameScreen({
       onFinished(game);
       return;
     }
+    pickedRef.current = false;
     setChoice(null);
     setPending(null);
     setRevealed(null);
@@ -141,7 +146,8 @@ export default function GameScreen({
   };
 
   const pick = (id: string) => {
-    if (phase !== 'deciding' || choice) return;
+    if (phase !== 'deciding' || choice || pickedRef.current) return; // ref blocks same-tick double clicks
+    pickedRef.current = true;
     sfx.select();
     setChoice(id);
   };
@@ -481,22 +487,23 @@ function DayReport({ game, day, onNext }: { game: GameState; day: number; onNext
   );
 }
 
-/** Centered result pop shown between the reveal and the results card. Values come straight from the engine record. */
+/** Centre-screen result pop. Values come straight from the engine record (profit = cash change). */
 function MoneyPop({ record }: { record: RoundRecord }) {
-  const one = (label: string, n: number, delay: number) => {
-    const kind = n > 0 ? 'gain' : n < 0 ? 'loss' : 'even';
-    return (
-      <div className={`mp-card ${kind}`} style={{ animationDelay: `${delay}s` }} data-amount={n}>
-        <small>{label}</small>
-        {n > 0 && <span className="mp-head">CHA-CHING!</span>}
-        <b>{n > 0 ? '+' : n < 0 ? '-' : ''}${Math.abs(Math.round(n)).toLocaleString()}</b>
-      </div>
-    );
-  };
+  const p = record.player.profit;
+  const c = record.claude.profit;
+  const kind = (n: number) => (n > 0 ? 'gain' : n < 0 ? 'loss' : 'even');
+  const amt = (n: number) => `${n > 0 ? '+' : n < 0 ? '-' : ''}$${Math.abs(Math.round(n)).toLocaleString()}`;
   return (
     <div className="money-pop" role="status">
-      {one('⚡ SUPABASE CAFÉ', record.player.profit, 0)}
-      {one('CLAUDE CAFÉ ✻', record.claude.profit, 0.12)}
+      <div className={`mp-main ${kind(p)}`} data-side="supabase" data-amount={p}>
+        {p > 0 && <span className="mp-head">CHA-CHING!</span>}
+        <b>{amt(p)}</b>
+        <small>⚡ SUPABASE CAFÉ</small>
+      </div>
+      <div className={`mp-sub ${kind(c)}`} data-side="claude" data-amount={c}>
+        <small>CLAUDE CAFÉ ✻</small>
+        <b>{amt(c)}</b>
+      </div>
     </div>
   );
 }
