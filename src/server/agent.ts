@@ -226,28 +226,42 @@ export async function decideClaude(state: GameState, scenario: Scenario, memorie
 
   const started = Date.now();
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 25000);
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model,
-        max_tokens: state.difficulty === 'hard' ? 700 : 400,
-        system: systemPrompt(state),
-        tools,
-        tool_choice: { type: 'tool', name: 'choose_action' },
-        messages: [{ role: 'user', content: `Current game state (JSON):\n${JSON.stringify(context, null, 1)}\n\nChoose Claude Café's action now.` }],
-      }),
-    });
-    clearTimeout(timer);
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Anthropic API ${res.status}: ${txt.slice(0, 200)}`);
+    type Block = { type: string; name?: string; input?: Record<string, unknown>; text?: string };
+    const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
+      { role: 'user', content: `Current game state (JSON):\n${JSON.stringify(context, null, 1)}\n\nChoose Claude Café's action now by calling the choose_action tool.` },
+    ];
+    // Some models don't accept forced tool_choice, so use "auto" + a strict instruction,
+    // and nudge once if the model answers in prose instead of calling the tool.
+    let call: Block | undefined;
+    for (let attempt = 0; attempt < 2 && !call; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 45000);
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model,
+          max_tokens: 4000,
+          system: systemPrompt(state),
+          tools,
+          tool_choice: { type: 'auto' },
+          messages,
+        }),
+      });
+      clearTimeout(timer);
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Anthropic API ${res.status}: ${txt.slice(0, 300)}`);
+      }
+      const data = (await res.json()) as { content?: Block[]; stop_reason?: string };
+      call = data.content?.find((bl) => bl.type === 'tool_use' && bl.name === 'choose_action');
+      if (!call) {
+        messages.push({ role: 'assistant', content: data.content ?? [] });
+        messages.push({ role: 'user', content: 'You must respond by calling the choose_action tool with one of the allowed actionIds. Call it now.' });
+      }
     }
-    const data = (await res.json()) as { content?: Array<{ type: string; name?: string; input?: Record<string, unknown> }> };
-    const call = data.content?.find((b) => b.type === 'tool_use' && b.name === 'choose_action');
+    if (!call) throw new Error('Model did not call choose_action after 2 attempts');
     const input = call?.input ?? {};
     const actionId = String(input.actionId ?? '');
     // Server-side validation: only allowed actions survive.

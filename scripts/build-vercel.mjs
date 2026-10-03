@@ -22,7 +22,7 @@ await build({
   outfile: `${fn}/index.js`,
   logLevel: 'warning',
 });
-writeFileSync(`${fn}/.vc-config.json`, JSON.stringify({ runtime: 'nodejs22.x', handler: 'index.js', launcherType: 'Nodejs', maxDuration: 30 }, null, 2));
+writeFileSync(`${fn}/.vc-config.json`, JSON.stringify({ runtime: 'nodejs22.x', handler: 'index.js', launcherType: 'Nodejs', maxDuration: 60 }, null, 2));
 writeFileSync(
   `${out}/config.json`,
   JSON.stringify(
