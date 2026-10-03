@@ -163,10 +163,15 @@ export const music = {
   },
   /** Browsers block autoplay: begin on the first click/tap/key if the player wants music. */
   armAutostart() {
-    const go = () => {
+    const go = (e: Event) => {
+      // A first click on the music button itself is handled by its own toggle.
+      if ((e.target as Element | null)?.closest?.('.music-btn')) return disarm();
+      disarm();
+      if (music.wanted()) music.start();
+    };
+    const disarm = () => {
       window.removeEventListener('pointerdown', go);
       window.removeEventListener('keydown', go);
-      if (music.wanted()) music.start();
     };
     window.addEventListener('pointerdown', go, { once: false });
     window.addEventListener('keydown', go, { once: false });
