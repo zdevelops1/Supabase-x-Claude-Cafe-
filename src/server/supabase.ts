@@ -18,6 +18,49 @@ const fmt = (where: string, e: PgErr) =>
   `[supabase:${where}] ${e?.message ?? String(e)}${e?.code ? ` (code ${e.code})` : ''}${e?.hint ? ` — hint: ${e.hint}` : ''}`;
 
 export class PersistError extends Error {}
+export class AuthError extends Error {
+  constructor(msg: string, public status = 401) { super(msg); }
+}
+
+export interface AuthUser { id: string; isAnonymous: boolean; email: string | null }
+
+/** Verifies a Supabase access token server-side. Returns null when no token was sent. */
+export async function verifyUser(token: string | null | undefined): Promise<AuthUser | null> {
+  if (!token) return null;
+  const sb = db();
+  if (!sb) return null;
+  const { data, error } = await sb.auth.getUser(token);
+  if (error || !data?.user) throw new AuthError(`Invalid or expired session: ${error?.message ?? 'no user'}`);
+  const u = data.user as { id: string; email?: string | null; is_anonymous?: boolean };
+  return { id: u.id, isAnonymous: !!u.is_anonymous, email: u.email ?? null };
+}
+
+/** Ensures the game session belongs to this user (or is an ownerless legacy session when no user). */
+export async function assertOwner(sessionId: string, user: AuthUser | null) {
+  const sb = db();
+  if (!sb) return;
+  const { data, error } = await sb.from('game_sessions').select('user_id').eq('id', sessionId).maybeSingle();
+  if (error) throw new PersistError(fmt('game_sessions.owner', error));
+  if (!data) throw new AuthError('Game session not found', 404);
+  const owner = (data as { user_id: string | null }).user_id;
+  if (owner !== (user?.id ?? null)) throw new AuthError('This game belongs to a different player', 403);
+}
+
+/** Latest unfinished game for this user (authoritative copy from the database). */
+export async function activeGame(userId: string) {
+  const sb = db();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from('game_sessions')
+    .select('state')
+    .eq('user_id', userId)
+    .eq('status', 'playing')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new PersistError(fmt('game_sessions.active', error));
+  return (data as { state: GameState } | null)?.state ?? null;
+}
 
 const TABLES = ['game_sessions', 'game_rounds', 'agent_memories', 'final_results', 'leaderboard'] as const;
 
@@ -36,10 +79,10 @@ export async function schemaCheck() {
 }
 
 /** Throws PersistError with the exact DB error when Supabase is configured but the insert fails. */
-export async function createSession(state: GameState): Promise<boolean> {
+export async function createSession(state: GameState, userId: string | null = null): Promise<boolean> {
   const sb = db();
   if (!sb) return false;
-  const { error } = await sb.from('game_sessions').insert({ id: state.sessionId, difficulty: state.difficulty, state });
+  const { error } = await sb.from('game_sessions').insert({ id: state.sessionId, difficulty: state.difficulty, state, user_id: userId });
   if (error) throw new PersistError(fmt('game_sessions.insert', error));
   return true;
 }
@@ -58,7 +101,7 @@ export async function loadMemories(sessionId: string): Promise<string[]> {
 }
 
 /** Returns a list of exact error strings (empty = everything persisted). */
-export async function persistRound(state: GameState, record: RoundRecord): Promise<string[]> {
+export async function persistRound(state: GameState, record: RoundRecord, userId: string | null = null): Promise<string[]> {
   const sb = db();
   if (!sb) return ['Supabase not configured on the server'];
   const d = record.claudeDecision;
@@ -67,6 +110,7 @@ export async function persistRound(state: GameState, record: RoundRecord): Promi
     sb.from('game_rounds').upsert(
       {
         session_id: state.sessionId,
+        user_id: userId,
         round_index: record.index,
         day: record.day,
         slot: record.slot,
@@ -87,11 +131,12 @@ export async function persistRound(state: GameState, record: RoundRecord): Promi
     sb.from('agent_memories').insert([
       {
         session_id: state.sessionId,
+        user_id: userId,
         round_index: record.index,
         kind: 'decision',
         content: `${record.scenarioTitle}: I chose "${record.claude.actionLabel}" (profit $${record.claude.profit}, share ${Math.round(record.claude.share * 100)}%); human chose "${record.player.actionLabel}".`,
       },
-      ...(d.strategyNote ? [{ session_id: state.sessionId, round_index: record.index, kind: 'strategy', content: d.strategyNote }] : []),
+      ...(d.strategyNote ? [{ session_id: state.sessionId, user_id: userId, round_index: record.index, kind: 'strategy', content: d.strategyNote }] : []),
     ]),
     sb
       .from('game_sessions')
@@ -110,6 +155,7 @@ export async function persistRound(state: GameState, record: RoundRecord): Promi
     const { error } = await sb.from('final_results').upsert(
       {
         session_id: state.sessionId,
+        user_id: userId,
         difficulty: state.difficulty,
         winner: winner(state),
         player_score: ps.total,
@@ -142,10 +188,10 @@ export async function sessionDiagnostics(sessionId: string) {
   const sb = db();
   if (!sb) throw new PersistError('Supabase not configured');
   const [s, r, m, f] = await Promise.all([
-    sb.from('game_sessions').select('id, difficulty, status, round_index, created_at, updated_at').eq('id', sessionId).maybeSingle(),
-    sb.from('game_rounds').select('round_index, event_id, player_action, claude_action, claude_source, claude_model, claude_reason, claude_latency_ms').eq('session_id', sessionId).order('round_index'),
-    sb.from('agent_memories').select('round_index, kind, content').eq('session_id', sessionId).order('round_index'),
-    sb.from('final_results').select('winner, player_score, claude_score, difficulty').eq('session_id', sessionId).maybeSingle(),
+    sb.from('game_sessions').select('id, user_id, difficulty, status, round_index, created_at, updated_at').eq('id', sessionId).maybeSingle(),
+    sb.from('game_rounds').select('round_index, user_id, event_id, player_action, claude_action, claude_source, claude_model, claude_reason, claude_latency_ms').eq('session_id', sessionId).order('round_index'),
+    sb.from('agent_memories').select('round_index, user_id, kind, content').eq('session_id', sessionId).order('round_index'),
+    sb.from('final_results').select('winner, user_id, player_score, claude_score, difficulty').eq('session_id', sessionId).maybeSingle(),
   ]);
   const errs = [s.error && fmt('game_sessions', s.error), r.error && fmt('game_rounds', r.error), m.error && fmt('agent_memories', m.error), f.error && fmt('final_results', f.error)].filter(Boolean);
   return {

@@ -17,7 +17,9 @@ function apiDevServer(): Plugin {
           for await (const chunk of req) raw += chunk;
           const body = raw ? JSON.parse(raw) : {};
           const mod = await server.ssrLoadModule('/src/server/handlers.ts');
-          const out = await mod.handleRoute(route, req.method || 'GET', body);
+          const auth = String(req.headers.authorization || '');
+          const token = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : null;
+          const out = await mod.handleRoute(route, req.method || 'GET', body, token);
           res.statusCode = out.status;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify(out.body));

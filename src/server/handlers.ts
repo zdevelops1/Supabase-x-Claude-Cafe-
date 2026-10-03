@@ -3,7 +3,7 @@ import { SCENARIOS } from '../engine/scenarios';
 import type { Difficulty, GameState } from '../engine/types';
 import { AgentError, decideClaude, fallbackAllowed } from './agent';
 import { seal, unseal } from './seal';
-import { createSession, db, leaderboard, loadMemories, PersistError, persistRound, schemaCheck, sessionDiagnostics } from './supabase';
+import { activeGame, assertOwner, AuthError, type AuthUser, createSession, db, leaderboard, loadMemories, PersistError, persistRound, schemaCheck, sessionDiagnostics, verifyUser } from './supabase';
 
 type Out = { status: number; body: unknown };
 const ok = (body: unknown): Out => ({ status: 200, body });
@@ -23,17 +23,26 @@ function localMemories(state: GameState) {
 
 const MODEL = () => process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5';
 
-export async function handleRoute(route: string, method: string, body: any): Promise<Out> {
+/** `token` = the caller's Supabase access token (from the Authorization header). */
+export async function handleRoute(route: string, method: string, body: any, token?: string | null): Promise<Out> {
   try {
-    return await route_(route, method, body);
+    return await route_(route, method, body, token ?? null);
   } catch (err) {
+    if (err instanceof AuthError) return bad(err.message, err.status, { kind: 'auth' });
     if (err instanceof AgentError) return bad(`Live Claude agent failed: ${err.message}`, 502, { kind: 'agent' });
     if (err instanceof PersistError) return bad(err.message, 502, { kind: 'supabase' });
     throw err;
   }
 }
 
-async function route_(route: string, method: string, body: any): Promise<Out> {
+/** With Supabase configured every game route needs a signed-in player (guest or account). */
+async function requireUser(token: string | null): Promise<AuthUser | null> {
+  const user = await verifyUser(token);
+  if (db() && !user) throw new AuthError('Sign in or play as Guest to start a game');
+  return user;
+}
+
+async function route_(route: string, method: string, body: any, token: string | null): Promise<Out> {
   switch (route) {
     case 'health': {
       const schema = await schemaCheck();
@@ -51,8 +60,9 @@ async function route_(route: string, method: string, body: any): Promise<Out> {
       if (method !== 'POST') return bad('POST only', 405);
       const difficulty = body?.difficulty as Difficulty;
       if (!['easy', 'medium', 'hard'].includes(difficulty)) return bad('Invalid difficulty');
+      const user = await requireUser(token);
       const state = createInitialState(crypto.randomUUID(), difficulty);
-      state.persisted = await createSession(state); // throws PersistError with exact DB error
+      state.persisted = await createSession(state, user?.id ?? null); // throws PersistError with exact DB error
       return ok({ state });
     }
 
@@ -64,6 +74,8 @@ async function route_(route: string, method: string, body: any): Promise<Out> {
       const scenario = currentScenario(state);
       if (!scenario || state.status !== 'playing') return bad('Game is over');
       if (db() && !state.persisted) return bad('This game was started without Supabase persistence. Start a new game.', 409, { kind: 'supabase' });
+      const user = await requireUser(token);
+      await assertOwner(state.sessionId, user);
       const memorySource = db() ? 'supabase' : 'local';
       const memories = db() ? await loadMemories(state.sessionId) : localMemories(state);
       const decision = await decideClaude(state, scenario, memories);
@@ -88,9 +100,11 @@ async function route_(route: string, method: string, body: any): Promise<Out> {
         return bad('Sealed Claude decision is missing or was tampered with');
       }
       if (payload.sessionId !== state.sessionId || payload.roundIndex !== state.roundIndex) return bad('Sealed decision does not match this round');
+      const user = await requireUser(token);
+      if (state.persisted) await assertOwner(state.sessionId, user);
       try {
         const out = resolveRound(state, String(playerActionId), payload.decision);
-        const persistErrors = state.persisted ? await persistRound(out.state, out.record) : db() ? ['Game not persisted'] : [];
+        const persistErrors = state.persisted ? await persistRound(out.state, out.record, user?.id ?? null) : db() ? ['Game not persisted'] : [];
         return ok({ ...out, persistErrors });
       } catch (err) {
         if (err instanceof InvalidActionError) return bad(err.message);
@@ -107,6 +121,14 @@ async function route_(route: string, method: string, body: any): Promise<Out> {
 
     case 'leaderboard':
       return ok(await leaderboard());
+
+    // Who am I + my latest unfinished game (authoritative copy from Supabase) for Resume.
+    case 'me': {
+      const user = await requireUser(token);
+      if (!user) return ok({ user: null, active: null });
+      const active = await activeGame(user.id);
+      return ok({ user, active });
+    }
 
     // Read-back of a session's stored rows (for verification). Off unless ENABLE_DIAGNOSTICS=1.
     case 'diag': {

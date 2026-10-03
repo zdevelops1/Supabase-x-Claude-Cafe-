@@ -22,10 +22,12 @@ const SLOT_ICON = { Morning: '☀️', Afternoon: '🌤️', Evening: '🌙' } a
 
 export default function GameScreen({
   save,
+  identity,
   onFinished,
   onQuit,
 }: {
   save: SaveData;
+  identity?: string;
   onFinished: (s: GameState) => void;
   onQuit: () => void;
 }) {
@@ -153,7 +155,7 @@ export default function GameScreen({
         <div className="hud-side supabase">
           <button className="icon-btn" onClick={onQuit} title="Back to title">⌂</button>
           <div className="hud-score">
-            <span>⚡ SUPABASE</span>
+            <span>⚡ SUPABASE{identity && <em className="hud-id" title="Signed in as">{identity}</em>}</span>
             <b><Num value={finalScore(game.cafes.supabase).total} /></b>
           </div>
         </div>

@@ -508,3 +508,30 @@ button { font-family: inherit; color: inherit; }
   .rc-table { font-size: 18px; }
   .rc-profit { font-size: 18px; margin: 6px 0 4px; }
 }
+
+/* ── Auth / entrance ── */
+.entrance { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 6px 0 14px; }
+.guest-btn { font-size: 18px; padding: 18px 40px; }
+.entrance-hint { color: var(--muted); font-size: 18px; }
+.entrance-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.identity-row { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; margin: -6px 0 12px; }
+.id-chip { font-family: var(--pixel); font-size: 9px; padding: 5px 8px; border: 2px solid var(--gold-d); background: rgba(0, 0, 0, 0.35); }
+.id-chip.guest { color: var(--gold-l); }
+.id-chip.member { color: var(--green); border-color: var(--green-d); }
+.link-btn { background: none; border: 0; color: var(--gold-l); text-decoration: underline; cursor: pointer; font-size: 18px; padding: 0; }
+.link-btn:hover { color: #fff; }
+.hud-id { font-style: normal; font-size: 7px; color: var(--gold-l); margin-left: 8px; padding: 2px 4px; border: 1px solid var(--gold-d); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+.auth-dialog { width: min(460px, 100%); padding: 22px 24px; display: flex; flex-direction: column; gap: 12px; animation: popIn 0.3s steps(5) both; }
+.auth-head { display: flex; gap: 12px; align-items: center; }
+.auth-title { font-family: var(--pixel); font-size: 15px; color: var(--gold-l); text-shadow: 2px 2px 0 #000; }
+.auth-sub { color: var(--muted); font-size: 18px; margin-top: 4px; }
+.auth-field { display: flex; flex-direction: column; gap: 4px; }
+.auth-field span { font-family: var(--pixel); font-size: 8px; color: var(--gold); }
+.auth-field input { font-family: var(--body); font-size: 22px; padding: 8px 10px; color: var(--cream); background: #050a0e; border: 2px solid var(--gold-d); outline: none; }
+.auth-field input:focus { border-color: var(--gold-l); box-shadow: 0 0 12px rgba(246, 217, 138, 0.3); }
+.auth-err { color: #ffb3b3; font-size: 18px; }
+.auth-note { color: var(--pos); font-size: 18px; }
+.title-note { margin-top: 6px; }
+.auth-links { display: flex; justify-content: space-between; gap: 10px; }
+.auth-links button { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 17px; }
+.auth-links button:hover { color: var(--gold-l); }

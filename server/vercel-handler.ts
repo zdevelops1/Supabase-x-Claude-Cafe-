@@ -16,7 +16,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     let raw = '';
     for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : {};
-    const out = await handleRoute(route, req.method || 'GET', body);
+    const auth = String(req.headers.authorization || '');
+    const token = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : null;
+    const out = await handleRoute(route, req.method || 'GET', body, token);
     send(out.status, out.body);
   } catch (err) {
     console.error('[api]', err);

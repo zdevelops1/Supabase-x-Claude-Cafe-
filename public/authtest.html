@@ -1,0 +1,142 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Auth verification</title>
+<style>body{background:#0b1418;color:#ece6d6;font:14px/1.4 ui-monospace,monospace;padding:16px}pre{white-space:pre-wrap}#status{font-weight:bold;font-size:16px}</style></head>
+<body><div id="status">checking…</div><pre id="log"></pre><pre id="result"></pre>
+<script type="module">
+/**
+ * Phase-4 auth verification (inert unless ENABLE_DIAGNOSTICS=1 and ?run=1).
+ * Guest A plays → isolation attacks from Guest B / no token → A upgrades to an account (same id, same game)
+ * → sign out/in restores → fresh account C sign up → play → sign out/in restores.
+ */
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+const st = document.getElementById('status'), lg = document.getElementById('log'), out = document.getElementById('result');
+const log = (...a) => { lg.textContent += a.join(' ') + '\n'; };
+const R = {};
+const pass = (k, m = '') => { if (!String(R[k] ?? '').startsWith('FAIL')) R[k] = 'PASS'; log('✓', k, m); };
+const fail = (k, m) => { R[k] = 'FAIL — ' + m; log('✗', k, m); };
+
+const h = await fetch('/api/health').then((r) => r.json());
+if (!h.diagnostics) { st.textContent = 'DISABLED — diagnostics are off (ENABLE_DIAGNOSTICS=0). Nothing was run.'; throw 0; }
+if (!new URLSearchParams(location.search).has('run')) { st.textContent = 'READY — append ?run=1 to run the auth matrix (creates test users, makes live Claude calls).'; throw 0; }
+st.textContent = 'RUNNING…';
+
+const cfg = await fetch('/api/config').then((r) => r.json());
+let n = 0;
+const client = () => createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false, storageKey: 'authtest-' + n++ } });
+const tok = async (c) => (await c.auth.getSession()).data.session?.access_token;
+const api = async (route, body, token) => {
+  const headers = { 'content-type': 'application/json' };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  const res = await fetch('/api/' + route, body ? { method: 'POST', headers, body: JSON.stringify(body) } : { headers });
+  return { status: res.status, j: await res.json().catch(() => ({})) };
+};
+const scen = (await api('scenarios')).j.scenarios;
+async function playRound(token, state, pick = 0) {
+  const a = await api('agent', { state }, token);
+  if (a.status !== 200) throw new Error('agent ' + a.status + ' ' + JSON.stringify(a.j));
+  if (a.j.meta.source !== 'claude') throw new Error('not live: ' + a.j.meta.error);
+  const leaked = scen[state.roundIndex].actions.some((id) => JSON.stringify(a.j).includes(id));
+  const r = await api('resolve', { state, playerActionId: scen[state.roundIndex].actions[pick], sealed: a.j.sealed }, token);
+  if (r.status !== 200) throw new Error('resolve ' + r.status + ' ' + JSON.stringify(r.j));
+  return { state: r.j.state, record: r.j.record, persistErrors: r.j.persistErrors, leaked, memory: a.j.memory, latency: a.j.meta.latencyMs, sealed: a.j.sealed };
+}
+const stamp = Date.now();
+const email = (tag) => `rzcontrerasruiz+sxc${tag}${stamp}@gmail.com`;
+const PW = 'Cafe-test-' + stamp;
+
+try {
+  // ── Guest A ─────────────────────────────────────────
+  const A = client();
+  const ga = await A.auth.signInAnonymously();
+  if (ga.error) throw new Error('signInAnonymously: ' + ga.error.message);
+  const aId = ga.data.user.id;
+  const me0 = await api('me', null, await tok(A));
+  me0.j.user?.isAnonymous && me0.j.user.id === aId ? pass('guest', 'anonymous user ' + aId.slice(0, 8)) : fail('guest', JSON.stringify(me0));
+  const s = await api('session', { difficulty: 'hard' }, await tok(A));
+  if (s.status !== 200) throw new Error('session ' + JSON.stringify(s.j));
+  let aState = s.j.state;
+  const r1 = await playRound(await tok(A), aState, 1);
+  aState = r1.state;
+  r1.persistErrors.length ? fail('guestSaves', r1.persistErrors.join('|')) : pass('guestSaves', 'round 1 saved');
+  r1.leaked ? fail('sealed', 'move leaked') : pass('sealed', 'agent response had no action id');
+  pass('liveClaude', r1.latency + 'ms');
+  const me1 = await api('me', null, await tok(A));
+  me1.j.active?.sessionId === aState.sessionId && me1.j.active.roundIndex === 1 ? pass('guestResume', 'active game restored at round 2') : fail('guestResume', JSON.stringify(me1.j.active && { id: me1.j.active.sessionId, r: me1.j.active.roundIndex }));
+
+  // ── Isolation ───────────────────────────────────────
+  const B = client();
+  const gb = await B.auth.signInAnonymously();
+  if (gb.error) throw new Error('B signInAnonymously: ' + gb.error.message);
+  const bAgent = await api('agent', { state: aState }, await tok(B));
+  bAgent.status === 403 ? pass('isolation', 'B cannot ask Claude for A\'s game (403)') : fail('isolation', 'B agent on A game → ' + bAgent.status);
+  const aNext = await api('agent', { state: aState }, await tok(A));
+  const bResolve = await api('resolve', { state: aState, playerActionId: scen[1].actions[0], sealed: aNext.j.sealed }, await tok(B));
+  bResolve.status === 403 ? pass('isolation', 'B cannot play A\'s round (403)') : fail('isolation', 'B resolve on A game → ' + bResolve.status);
+  const bMe = await api('me', null, await tok(B));
+  !bMe.j.active ? pass('isolation', 'B has no access to A\'s active game') : fail('isolation', 'B sees an active game');
+  const bRows = await B.from('game_sessions').select('id').eq('id', aState.sessionId);
+  !bRows.error && bRows.data.length === 0 ? pass('rls', 'B direct DB read of A\'s session → 0 rows') : fail('rls', JSON.stringify(bRows));
+  const bRounds = await B.from('game_rounds').select('id').eq('session_id', aState.sessionId);
+  !bRounds.error && bRounds.data.length === 0 ? pass('rls', 'B direct DB read of A\'s rounds → 0 rows') : fail('rls', JSON.stringify(bRounds));
+  const aRows = await A.from('game_sessions').select('id').eq('id', aState.sessionId);
+  !aRows.error && aRows.data.length === 1 ? pass('rls', 'A can read own session') : fail('rls', 'A own read ' + JSON.stringify(aRows));
+  const anon = client();
+  const anonRows = await anon.from('game_sessions').select('id').limit(5);
+  !anonRows.error && anonRows.data.length === 0 ? pass('rls', 'signed-out read → 0 rows') : fail('rls', JSON.stringify(anonRows));
+  const anonWrite = await anon.from('game_sessions').insert({ difficulty: 'easy', state: {} });
+  anonWrite.error ? pass('rls', 'signed-out write rejected') : fail('rls', 'anon insert succeeded!');
+  const bWrite = await B.from('game_sessions').update({ round_index: 99 }).eq('id', aState.sessionId).select('id');
+  (bWrite.error || bWrite.data.length === 0) ? pass('rls', 'B cannot modify A\'s session') : fail('rls', 'B update succeeded!');
+  const noTok = await api('session', { difficulty: 'easy' });
+  noTok.status === 401 ? pass('isolation', 'no token → cannot start a game (401)') : fail('isolation', 'no-token session → ' + noTok.status);
+  const lb = await anon.from('leaderboard').select('*');
+  !lb.error ? pass('leaderboard', 'public aggregate still readable') : fail('leaderboard', lb.error.message);
+
+  // ── Guest A → account (same id, same game) ─────────
+  const eA = email('a');
+  const u1 = await A.auth.updateUser({ email: eA });
+  if (u1.error) throw new Error('upgrade email: ' + u1.error.message);
+  u1.data.user.email ? pass('upgradeInstant', 'email attached immediately (Confirm email is off)') : fail('upgradeInstant', 'email pending confirmation');
+  const u2 = await A.auth.updateUser({ password: PW });
+  if (u2.error) throw new Error('upgrade password: ' + u2.error.message);
+  await A.auth.refreshSession();
+  const meU = await api('me', null, await tok(A));
+  meU.j.user?.id === aId && !meU.j.user.isAnonymous ? pass('guestToAccount', 'same user id, now permanent') : fail('guestToAccount', JSON.stringify(meU.j.user));
+  meU.j.active?.sessionId === aState.sessionId ? pass('guestToAccount', 'same active game retained (no duplicate)') : fail('guestToAccount', 'active game changed');
+  const r2 = await playRound(await tok(A), meU.j.active, 0);
+  r2.memory.count >= 1 ? pass('memory', `round 2 loaded ${r2.memory.count} strategy note(s) from ${r2.memory.source}`) : fail('memory', JSON.stringify(r2.memory));
+  r2.persistErrors.length ? fail('accountSaves', r2.persistErrors.join('|')) : pass('accountSaves', 'round 2 saved under account');
+  await A.auth.signOut();
+  const A2 = client();
+  const si = await A2.auth.signInWithPassword({ email: eA, password: PW });
+  if (si.error) throw new Error('sign in A: ' + si.error.message);
+  const meA2 = await api('me', null, await tok(A2));
+  meA2.j.user?.id === aId && meA2.j.active?.sessionId === aState.sessionId && meA2.j.active.roundIndex === 2
+    ? pass('signInRestores', 'converted guest signed back in at round 3')
+    : fail('signInRestores', JSON.stringify({ u: meA2.j.user?.id, a: meA2.j.active?.sessionId, r: meA2.j.active?.roundIndex }));
+
+  // ── Fresh account C ───────────────────────────────
+  const C = client();
+  const eC = email('c');
+  const su = await C.auth.signUp({ email: eC, password: PW });
+  if (su.error) throw new Error('signUp: ' + su.error.message);
+  su.data.session ? pass('createAccount', 'account created with an immediate session') : fail('createAccount', 'no session (confirmation required?)');
+  const cs = await api('session', { difficulty: 'medium' }, await tok(C));
+  const rc = await playRound(await tok(C), cs.j.state, 2);
+  rc.persistErrors.length ? fail('accountSaves', rc.persistErrors.join('|')) : pass('accountSaves', 'account C round saved');
+  await C.auth.signOut();
+  const C2 = client();
+  const sc = await C2.auth.signInWithPassword({ email: eC, password: PW });
+  if (sc.error) throw new Error('sign in C: ' + sc.error.message);
+  const meC = await api('me', null, await tok(C2));
+  meC.j.active?.sessionId === cs.j.state.sessionId && meC.j.active.roundIndex === 1 ? pass('signIn', 'C signed back in, game restored') : fail('signIn', JSON.stringify(meC.j.active?.sessionId));
+  const cvA = await api('agent', { state: meA2.j.active }, await tok(C2));
+  cvA.status === 403 ? pass('isolation', 'account C cannot play account A\'s game (403)') : fail('isolation', 'C on A → ' + cvA.status);
+} catch (e) {
+  R.crash = String(e.message || e);
+  log('✗ CRASH', R.crash);
+}
+const failed = Object.values(R).some((v) => String(v).startsWith('FAIL')) || R.crash;
+st.textContent = failed ? 'DONE — FAILURES' : 'DONE — ALL PASS';
+out.textContent = 'RESULT ' + JSON.stringify(R, null, 2);
+</script></body></html>

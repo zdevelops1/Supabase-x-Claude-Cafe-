@@ -3,6 +3,8 @@ import CafeScene, { Portrait } from './CafeScene';
 import { api, type Health } from '../lib/api';
 import { onNewResult } from '../lib/realtime';
 import { sfx } from '../lib/sfx';
+import type { Player } from '../lib/auth';
+import type { AuthMode } from './AuthDialog';
 
 type LB = Awaited<ReturnType<typeof api.leaderboard>>;
 
@@ -11,12 +13,27 @@ export default function TitleScreen({
   onStart,
   onResume,
   health,
+  player,
+  authAvailable,
+  authBusy,
+  authNote,
+  onGuest,
+  onAuth,
+  onSignOut,
 }: {
   canResume: boolean;
   onStart: () => void;
   onResume: () => void;
   health: Health | null;
+  player: Player | null;
+  authAvailable: boolean;
+  authBusy: boolean;
+  authNote: string | null;
+  onGuest: () => void;
+  onAuth: (mode: AuthMode) => void;
+  onSignOut: () => void;
 }) {
+  const needsEntrance = authAvailable && !player;
   const [lb, setLb] = useState<LB | null>(null);
   useEffect(() => {
     const load = () => api.leaderboard().then(setLb).catch(() => setLb(null));
@@ -54,16 +71,45 @@ export default function TitleScreen({
           You run <b className="green-text">Supabase Café</b>. Across the street, an autonomous <b className="orange-text">Claude agent</b> runs its own café
           in the same market — observing, reasoning, remembering, and competing against you.
         </p>
-        <div className="title-actions">
-          <button className="pixel-btn big gold" onClick={() => { sfx.select(); onStart(); }}>
-            ▶ START COMPETITION
-          </button>
-          {canResume && (
-            <button className="pixel-btn" onClick={() => { sfx.click(); onResume(); }}>
-              ↺ RESUME GAME
+        {needsEntrance ? (
+          <div className="entrance">
+            <button className="pixel-btn big gold guest-btn" disabled={authBusy} onClick={() => { sfx.select(); onGuest(); }}>
+              {authBusy ? 'OPENING THE CAFÉ…' : '▶ PLAY AS GUEST'}
             </button>
-          )}
-        </div>
+            <div className="entrance-hint">No sign-up needed — jump straight into a full game.</div>
+            <div className="entrance-row">
+              <button className="pixel-btn" disabled={authBusy} onClick={() => { sfx.click(); onAuth('signin'); }}>SIGN IN</button>
+              <button className="pixel-btn" disabled={authBusy} onClick={() => { sfx.click(); onAuth('signup'); }}>CREATE ACCOUNT</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="title-actions">
+              <button className="pixel-btn big gold" onClick={() => { sfx.select(); onStart(); }}>
+                ▶ START COMPETITION
+              </button>
+              {canResume && (
+                <button className="pixel-btn" onClick={() => { sfx.click(); onResume(); }}>
+                  ↺ RESUME GAME
+                </button>
+              )}
+            </div>
+            {player && (
+              <div className="identity-row">
+                <span className={`id-chip ${player.isGuest ? 'guest' : 'member'}`}>{player.isGuest ? '👤 GUEST' : `☕ ${player.email ?? 'SIGNED IN'}`}</span>
+                {player.isGuest ? (
+                  <>
+                    <button className="link-btn" onClick={() => onAuth('upgrade')}>Save progress · create account</button>
+                    <button className="link-btn" onClick={() => onAuth('signin')}>Sign in</button>
+                  </>
+                ) : (
+                  <button className="link-btn" onClick={onSignOut}>Sign out</button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+        {authNote && <div className="auth-note title-note">{authNote}</div>}
         <div className="status-row">
           <span className={`chip ${health?.anthropic ? 'on' : 'off'}`}>{health?.anthropic ? `● Live Claude agent · ${health.model}` : '○ Claude offline (fallback)'}</span>
           <span className={`chip ${health?.schema.ok ? 'on' : health?.supabase ? 'bad' : 'off'}`}>
