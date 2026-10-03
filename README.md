@@ -35,7 +35,7 @@ MARKET EVENT ──► GAME STATE
 
 ### Stack
 - React + TypeScript + Vite (pixel art is hand-drawn SVG — no asset pipeline)
-- Server API: `src/server/*` — served by a Vite dev middleware locally and by a single Vercel function (`api/[route].ts`) in production
+- Server API: `src/server/*` — served by a Vite dev middleware locally and by a single pre-bundled Vercel function (`server/vercel-handler.ts`, emitted by `scripts/build-vercel.mjs` via the Build Output API) in production
 - Anthropic Messages API (server-side only)
 - Supabase Postgres + RLS + Realtime (live Human-vs-Claude record on the title screen)
 
@@ -43,7 +43,7 @@ MARKET EVENT ──► GAME STATE
 src/engine/      types, 12 scenarios, deterministic engine (pure functions)
 src/server/      agent.ts (Claude), fallbackAgent.ts, supabase.ts, handlers.ts
 src/components/  TitleScreen, DifficultySelect, GameScreen, CafePanel, CafeScene (SVG), FinalScreen
-api/[route].ts   Vercel serverless entry
+server/vercel-handler.ts  Vercel serverless entry (bundled at build)
 supabase/migrations/  schema
 scripts/simulate.ts   balance checker (npm run sim)
 ```
@@ -73,7 +73,7 @@ npm run dev              # http://localhost:5173
 Run `supabase/migrations/20261003000000_init.sql` in the Supabase SQL editor (or `supabase db push`). Tables: `game_sessions`, `game_rounds`, `agent_memories`, `final_results` + `leaderboard` view. RLS blocks all anon access except reading `final_results`; all writes go through the server with the service role key.
 
 ### Deploy (Vercel)
-Import the repo → framework **Vite** → add the env vars above → deploy. `vercel.json` routes `/api/*` to the function and everything else to the SPA.
+Import the repo → framework **Vite** → add the env vars above → deploy. `npm run build` writes `.vercel/output` (static site + one bundled API function + routes), which Vercel deploys as-is.
 
 ---
 
