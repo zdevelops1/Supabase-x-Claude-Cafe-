@@ -1,35 +1,37 @@
-import { useEffect, useState } from 'react';
-import CafeScene from './CafeScene';
+import { useEffect, useMemo, useState } from 'react';
+import CafeScene, { Portrait } from './CafeScene';
 import { finalScore, RULES, winner } from '../engine/engine';
 import type { GameState } from '../engine/types';
 import { sfx } from '../lib/sfx';
-import { money, useTween } from '../lib/useTween';
+import { money } from '../lib/useTween';
 
-function Count({ v, fmt = (n: number) => Math.round(n).toLocaleString(), delay = 0 }: { v: number; fmt?: (n: number) => string; delay?: number }) {
-  const [t, setT] = useState(0);
-  useEffect(() => {
-    const id = setTimeout(() => setT(v), delay);
-    return () => clearTimeout(id);
-  }, [v, delay]);
-  const x = useTween(t, 1400);
-  return <>{fmt(x)}</>;
-}
-
+/** Final values render immediately (no count-up from 0); rows reveal with a staggered pop. */
 export default function FinalScreen({ game, onPlayAgain, onTitle }: { game: GameState; onPlayAgain: () => void; onTitle: () => void }) {
   const w = winner(game);
   const [show, setShow] = useState(false);
   useEffect(() => {
     const id = setTimeout(() => {
       setShow(true);
-      w === 'claude' ? sfx.lose() : sfx.fanfare();
-    }, 2200);
+      if (w === 'claude') sfx.lose();
+      else sfx.fanfare();
+    }, 1500);
     return () => clearTimeout(id);
   }, [w]);
   const sides = [
-    { key: 'supabase' as const, name: 'SUPABASE CAFÉ', cls: 'green', cafe: game.cafes.supabase },
-    { key: 'claude' as const, name: 'CLAUDE CAFÉ', cls: 'orange', cafe: game.cafes.claude },
+    { key: 'supabase' as const, name: 'SUPABASE CAFÉ', cafe: game.cafes.supabase },
+    { key: 'claude' as const, name: 'CLAUDE CAFÉ', cafe: game.cafes.claude },
   ];
   const usedModel = game.history.some((h) => h.claudeDecision.source === 'claude');
+  const confetti = useMemo(
+    () =>
+      Array.from({ length: 46 }, (_, i) => ({
+        left: (i * 37) % 100,
+        delay: (i % 12) * 0.12,
+        dur: 2.4 + (i % 5) * 0.4,
+        color: w === 'claude' ? ['#e8875f', '#ffc2a3', '#f6d98a'][i % 3] : w === 'supabase' ? ['#3ecf8e', '#8af0c2', '#f6d98a'][i % 3] : '#f6d98a',
+      })),
+    [w],
+  );
 
   return (
     <div className="final-screen">
@@ -42,28 +44,50 @@ export default function FinalScreen({ game, onPlayAgain, onTitle }: { game: Game
         </div>
         <div className="title-vignette" />
       </div>
-      <div className="final-card pixel-panel">
+      {show && w !== 'tie' && (
+        <div className="confetti">
+          {confetti.map((c, i) => (
+            <i key={i} style={{ left: `${c.left}%`, background: c.color, animationDelay: `${c.delay}s`, animationDuration: `${c.dur}s` }} />
+          ))}
+        </div>
+      )}
+      <div className="final-card dialog">
         <div className="results-kicker">4 DAYS · 12 ROUNDS · {game.difficulty.toUpperCase()} · {usedModel ? 'LIVE CLAUDE AGENT' : 'OFFLINE AGENT'}</div>
         <h2 className="final-title">FINAL RESULTS</h2>
         <div className="final-cols">
           {sides.map((s, i) => {
             const sc = finalScore(s.cafe);
+            const rows: Array<[string, string]> = [
+              ['Revenue', money(s.cafe.totals.revenue)],
+              ['Profit', money(s.cafe.totals.profit)],
+              ['Customers', s.cafe.totals.customers.toLocaleString()],
+              ['Reputation', String(Math.round(s.cafe.reputation))],
+              ['Satisfaction', String(Math.round(s.cafe.satisfaction))],
+            ];
             return (
-              <div key={s.key} className={`final-col ${s.cls} ${show && w === s.key ? 'champ' : ''}`}>
-                <div className="rc-title">{s.name}</div>
+              <div key={s.key} className={`final-col ${s.key} ${show && w === s.key ? 'champ' : ''}`}>
+                <div className="rc-head">
+                  <div className="mini-portrait"><Portrait side={s.key} /></div>
+                  <div className="rc-title">{s.name}</div>
+                  {show && w === s.key && <div className="rc-crown">👑</div>}
+                </div>
                 <table className="rc-table">
                   <tbody>
-                    <tr><td>Revenue</td><td><Count v={s.cafe.totals.revenue} fmt={money} delay={i * 150} /></td></tr>
-                    <tr><td>Profit</td><td><Count v={s.cafe.totals.profit} fmt={money} delay={i * 150} /></td></tr>
-                    <tr><td>Customers</td><td><Count v={s.cafe.totals.customers} delay={i * 150} /></td></tr>
-                    <tr><td>Reputation</td><td><Count v={s.cafe.reputation} delay={i * 150} /></td></tr>
-                    <tr><td>Satisfaction</td><td><Count v={s.cafe.satisfaction} delay={i * 150} /></td></tr>
-                    <tr className="sum"><td>Final cash</td><td>{money(sc.cash)}</td></tr>
-                    <tr><td>+ Rep × {RULES.score.reputation}</td><td>{money(sc.reputationPts)}</td></tr>
-                    <tr><td>+ Sat × {RULES.score.satisfaction}</td><td>{money(sc.satisfactionPts)}</td></tr>
-                    <tr className="sum score"><td>SCORE</td><td><Count v={sc.total} delay={800 + i * 150} /></td></tr>
+                    {rows.map(([k, v], r) => (
+                      <tr key={k} className="final-row" style={{ animationDelay: `${0.1 + r * 0.08 + i * 0.04}s` }}>
+                        <td>{k}</td>
+                        <td>{v}</td>
+                      </tr>
+                    ))}
+                    <tr className="sum final-row" style={{ animationDelay: '0.6s' }}><td>Final cash</td><td>{money(sc.cash)}</td></tr>
+                    <tr className="final-row" style={{ animationDelay: '0.68s' }}><td>+ Reputation × {RULES.score.reputation}</td><td>{money(sc.reputationPts)}</td></tr>
+                    <tr className="final-row" style={{ animationDelay: '0.76s' }}><td>+ Satisfaction × {RULES.score.satisfaction}</td><td>{money(sc.satisfactionPts)}</td></tr>
                   </tbody>
                 </table>
+                <div className="final-score" style={{ animationDelay: '0.95s' }}>
+                  <small>SCORE</small>
+                  {sc.total.toLocaleString()}
+                </div>
               </div>
             );
           })}

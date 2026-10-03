@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import CafePanel from './CafePanel';
-import { currentScenario, dayTotals, describeEffect, findAction } from '../engine/engine';
+import { Portrait } from './CafeScene';
+import { currentScenario, dayTotals, describeEffect, finalScore, findAction } from '../engine/engine';
 import { SCENARIOS, TOTAL_ROUNDS } from '../engine/scenarios';
 import type { ClaudeDecision, GameState, RoundRecord, RoundResult } from '../engine/types';
 import { api, type SealedDecision } from '../lib/api';
 import { storage, type SaveData } from '../lib/storage';
 import { sfx } from '../lib/sfx';
-import { money, signed, signedMoney } from '../lib/useTween';
+import { money, signed, signedMoney, useTween } from '../lib/useTween';
 
 type Phase = 'deciding' | 'revealing' | 'resolving' | 'results' | 'day';
 type ClaudeStatus = 'thinking' | 'locked' | 'revealed' | 'error';
@@ -101,7 +102,7 @@ export default function GameScreen({
         storage.save({ state: out.state });
         setPhase('results');
         setShowCard(false);
-        setTimeout(() => setShowCard(true), 1700); // let floaters + customers land first
+        setTimeout(() => setShowCard(true), 1300); // let floaters + customers land first
         if (out.record.player.profit >= out.record.claude.profit) sfx.cash();
         else sfx.lose();
       } catch (e) {
@@ -148,52 +149,96 @@ export default function GameScreen({
   return (
     <div className={`game-screen slot-${displaySlot.toLowerCase()}`}>
       {/* HUD */}
-      <div className="hud">
-        <button className="pixel-btn tiny ghost" onClick={onQuit} title="Back to title">⌂</button>
+      <header className="hud-bar">
+        <div className="hud-side supabase">
+          <button className="icon-btn" onClick={onQuit} title="Back to title">⌂</button>
+          <div className="hud-score">
+            <span>⚡ SUPABASE</span>
+            <b><Num value={finalScore(game.cafes.supabase).total} /></b>
+          </div>
+        </div>
         <div className="hud-center">
-          <span className="hud-day">DAY {scenario.day}/4</span>
-          <span className="hud-slot">{SLOT_ICON[displaySlot]} {displaySlot.toUpperCase()}</span>
-          <span className="hud-round">ROUND {roundNo}/{TOTAL_ROUNDS}</span>
-          <span className={`hud-diff ${game.difficulty}`}>{game.difficulty.toUpperCase()}</span>
-          {meta && <span className={`hud-agent ${live ? 'live' : 'offline'}`}>{live ? `● LIVE CLAUDE · ${meta.model}` : '○ OFFLINE FALLBACK'}</span>}
-          <span className={`hud-db ${game.persisted ? (dbErrors.length ? 'bad' : 'ok') : 'off'}`}>
-            {game.persisted ? (dbErrors.length ? '⚠ SUPABASE ERROR' : '● SUPABASE SAVED') : '○ NOT PERSISTED'}
-          </span>
+          <div className="hud-time">
+            <span className="hud-day">DAY {scenario.day}<small>/4</small></span>
+            <span className="hud-slot">{SLOT_ICON[displaySlot]} {displaySlot.toUpperCase()}</span>
+            <span className="hud-round">ROUND {roundNo}<small>/{TOTAL_ROUNDS}</small></span>
+            <span className={`hud-diff ${game.difficulty}`}>{game.difficulty.toUpperCase()}</span>
+          </div>
+          <div className="round-dots">
+            {SCENARIOS.map((sc, i) => {
+              const h = game.history[i];
+              const cls = h ? (h.player.profit >= h.claude.profit ? 'won' : 'lost') : i === game.roundIndex ? 'now' : '';
+              return <span key={sc.id} className={`dot ${cls} ${i % 3 === 2 ? 'day-end' : ''}`} title={sc.title} />;
+            })}
+          </div>
+          <div className="hud-status">
+            <span className={`hud-agent ${meta ? (live ? 'live' : 'offline') : 'pending'}`}>
+              {meta ? (live ? `● LIVE CLAUDE · ${meta.model}` : '○ OFFLINE FALLBACK') : '◌ CONNECTING CLAUDE'}
+            </span>
+            <span className={`hud-db ${game.persisted ? (dbErrors.length ? 'bad' : 'ok') : 'off'}`}>
+              {game.persisted ? (dbErrors.length ? '⚠ SUPABASE ERROR' : '● SUPABASE SAVED') : '○ NOT PERSISTED'}
+            </span>
+          </div>
         </div>
-        <button className="pixel-btn tiny ghost" onClick={() => setMuted(sfx.toggle())} title="Sound">{muted ? '🔇' : '🔊'}</button>
-      </div>
-      <div className="round-dots">
-        {SCENARIOS.map((s, i) => {
-          const h = game.history[i];
-          const cls = h ? (h.player.profit >= h.claude.profit ? 'won' : 'lost') : i === game.roundIndex ? 'now' : '';
-          return <span key={s.id} className={`dot ${cls} ${i % 3 === 2 ? 'day-end' : ''}`} title={s.title} />;
-        })}
+        <div className="hud-side claude">
+          <div className="hud-score">
+            <span>CLAUDE ✻</span>
+            <b><Num value={finalScore(game.cafes.claude).total} /></b>
+          </div>
+          <button className="icon-btn" onClick={() => setMuted(sfx.toggle())} title="Sound">{muted ? '🔇' : '🔊'}</button>
+        </div>
+      </header>
+
+      <div className={`arena ${phase === 'revealing' ? 'shake' : ''}`}>
+        <CafePanel side="supabase" cafe={game.cafes.supabase} slot={displaySlot} last={record?.player ?? null} floaterKey={floaterKey} />
+        <div className="pillar">
+          <div className="pillar-cap" />
+          <div className="pillar-shaft" />
+          <div className="vs-gem"><span>VS</span></div>
+          <div className="pillar-shaft" />
+          <div className="pillar-cap" />
+        </div>
+        <CafePanel side="claude" cafe={game.cafes.claude} slot={displaySlot} last={record?.claude ?? null} busy={status === 'thinking'} floaterKey={floaterKey} />
       </div>
 
-      {/* Shared market event */}
-      <div className="event-card pixel-panel" key={scenario.id}>
-        <div className="event-tag">📰 MARKET EVENT · SAME FOR BOTH CAFÉS</div>
-        <div className="event-title">
-          <span className="event-icon">{scenario.icon}</span> {scenario.title.toUpperCase()}
+      {/* Shared market event — RPG dialog box */}
+      <div className="event-box dialog" key={scenario.id}>
+        <div className="event-portrait">{scenario.icon}</div>
+        <div className="event-body">
+          <div className="event-tag">MARKET EVENT · SAME FOR BOTH CAFÉS</div>
+          <div className="event-title">{scenario.title.toUpperCase()}</div>
+          <p className="event-desc">{scenario.description}</p>
         </div>
-        <p className="event-desc">{scenario.description}</p>
-        <div className="event-meta">
-          <span>Demand {Math.round(scenario.demand * 100)}%</span>
-          {scenario.baseline && <span className="warn">⚠ {describeEffect(scenario.baseline).join(' · ')} (both cafés)</span>}
+        <div className="event-side">
+          <div className="demand">
+            <span>DEMAND</span>
+            <div className="demand-meter"><i style={{ width: `${Math.min(100, (scenario.demand / 1.6) * 100)}%` }} /></div>
+            <b>{Math.round(scenario.demand * 100)}%</b>
+          </div>
+          {scenario.baseline && <div className="event-warn">⚠ {describeEffect(scenario.baseline).join(' · ')}<small> both cafés</small></div>}
         </div>
       </div>
 
-      <div className="arena">
-        <CafePanel side="supabase" cafe={game.cafes.supabase} slot={displaySlot} last={record?.player ?? null} floaterKey={floaterKey}>
+      <div className="controls-row">
+        {/* Human menu */}
+        <section className="dialog player-menu">
+          <div className="menu-head">
+            <div className="mini-portrait"><Portrait side="supabase" /></div>
+            <div>
+              <div className="menu-title green-text">{choice ? 'YOUR DECISION IS IN' : 'YOUR MOVE'}</div>
+              <div className="menu-sub">{choice ? (pending ? 'Revealing both moves…' : 'Waiting for Claude to finish thinking…') : 'Pick one strategy for Supabase Café'}</div>
+            </div>
+          </div>
           <div className="choices">
-            <div className="controls-title">{choice ? 'YOUR DECISION' : 'YOUR MOVE — CHOOSE ONE'}</div>
             {scenario.actions.map((a) => (
               <button
                 key={a.id}
                 className={`choice ${choice === a.id ? 'picked' : ''} ${choice && choice !== a.id ? 'dim' : ''}`}
                 disabled={phase !== 'deciding' || !!choice}
                 onClick={() => pick(a.id)}
+                title={a.description}
               >
+                <span className="choice-cursor">▶</span>
                 <span className="choice-key">{a.key}</span>
                 <span className="choice-body">
                   <span className="choice-label">{a.label}</span>
@@ -206,29 +251,39 @@ export default function GameScreen({
                 </span>
               </button>
             ))}
-            {choice && !decision && <div className="waiting">Waiting for Claude to finish thinking…</div>}
           </div>
-        </CafePanel>
+        </section>
 
-        <div className="divider">
-          <div className="divider-line" />
-          <div className="vs-badge">VS</div>
-          <div className="divider-line" />
-        </div>
+        <div className="pillar-spacer" />
 
-        <CafePanel side="claude" cafe={game.cafes.claude} slot={displaySlot} last={record?.claude ?? null} busy={status === 'thinking'} floaterKey={floaterKey}>
-          <div className={`agent-box ${status}`}>
-            <div className="controls-title">AUTONOMOUS AGENT</div>
+        {/* Claude agent */}
+        <section className={`dialog agent-box ${status}`}>
+          <div className="menu-head">
+            <div className={`mini-portrait robot ${status}`}><Portrait side="claude" busy={status === 'thinking'} /></div>
+            <div className="agent-head-text">
+              <div className="menu-title orange-text">CLAUDE · AUTONOMOUS AGENT</div>
+              <div className="agent-context">
+                {CONTEXT_LABEL[game.difficulty].map((c) => (
+                  <span key={c} className="tag orange">{c}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="agent-stage">
             {status === 'thinking' && (
-              <div className="agent-state">
+              <div className="agent-state thinking">
                 <div className="agent-big">CLAUDE IS THINKING<span className="dots"><i>.</i><i>.</i><i>.</i></span></div>
-                <div className="agent-sub">Observing the market and its café…</div>
+                <div className="think-bars"><i /><i /><i /><i /><i /></div>
+                <div className="agent-sub">Reading the market, its café{game.difficulty !== 'easy' ? ', its memory' : ''}{game.difficulty === 'hard' ? ' — and you' : ''}…</div>
               </div>
             )}
             {status === 'locked' && (
-              <div className="agent-state">
-                <div className="agent-big">🔒 DECISION LOCKED</div>
-                <div className="agent-sub">Claude has committed its move. It can't see yours. Your turn.</div>
+              <div className="agent-state locked">
+                <div className="lock-seal">🔒</div>
+                <div>
+                  <div className="agent-big gold-text">DECISION LOCKED</div>
+                  <div className="agent-sub">Claude has committed its move. It can't see yours.</div>
+                </div>
               </div>
             )}
             {status === 'revealed' && claudeAction && decision && (
@@ -240,49 +295,43 @@ export default function GameScreen({
                 <div className="agent-reason">“{decision.reason}”</div>
                 {decision.strategyNote && (
                   <div className="agent-note">
-                    <span>📓 Claude's notebook:</span> {decision.strategyNote}
+                    <span>📓 NOTEBOOK</span> {decision.strategyNote}
                   </div>
                 )}
               </div>
             )}
             {status === 'error' && (
               <div className="agent-state">
-                <div className="agent-big">⚠ AGENT UNREACHABLE</div>
-                <div className="agent-sub">{err}</div>
+                <div className="agent-big neg">⚠ AGENT UNREACHABLE</div>
+                <div className="agent-sub err-text">{err}</div>
                 <button className="pixel-btn tiny" onClick={() => { requested.current = -1; askClaude(game); }}>RETRY</button>
               </div>
             )}
-            <div className="agent-context">
-              <span className="ctx-title">CONTEXT:</span>
-              {CONTEXT_LABEL[game.difficulty].map((c) => (
-                <span key={c} className="tag orange">{c}</span>
-              ))}
-            </div>
-            {meta && (
-              <div className={`agent-source ${live ? 'live' : 'offline'}`}>
-                {live
-                  ? `● LIVE ANTHROPIC CALL: ${meta.model ?? 'Claude'} · ${((meta.latencyMs ?? 0) / 1000).toFixed(1)}s${pending ? ` · ${pending.memory.count} memory notes from ${pending.memory.source}` : ''}`
-                  : `○ OFFLINE FALLBACK STRATEGIST — ${meta.error ?? 'no API key'}`}
-              </div>
-            )}
           </div>
-        </CafePanel>
+          {meta && (
+            <div className={`agent-source ${live ? 'live' : 'offline'}`}>
+              {live
+                ? `● LIVE ANTHROPIC CALL · ${meta.model ?? 'Claude'} · ${((meta.latencyMs ?? 0) / 1000).toFixed(1)}s${pending ? ` · ${pending.memory.count} memory notes from ${pending.memory.source}` : ''}`
+                : `○ OFFLINE FALLBACK STRATEGIST — ${meta.error ?? 'no API key'}`}
+            </div>
+          )}
+        </section>
       </div>
 
       {phase === 'revealing' && playerAction && claudeAction && (
         <div className="reveal-banner">
           <div className="rb-side green">
-            <small>SUPABASE CAFÉ</small>
+            <small>⚡ SUPABASE CAFÉ</small>
             {playerAction.label}
           </div>
           <div className="rb-vs">VS</div>
           <div className="rb-side orange">
-            <small>CLAUDE CAFÉ</small>
+            <small>CLAUDE CAFÉ ✻</small>
             {claudeAction.label}
           </div>
         </div>
       )}
-      {phase === 'resolving' && <div className="reveal-banner small">⚖ ENGINE IS SIMULATING THE MARKET…</div>}
+      {phase === 'resolving' && <div className="reveal-banner small">⚖ THE ENGINE IS SIMULATING THE MARKET…</div>}
 
       {phase === 'results' && record && !showCard && (
         <button className="skip-hint" onClick={() => setShowCard(true)}>RESULTS ▶</button>
@@ -300,18 +349,31 @@ export default function GameScreen({
   );
 }
 
-function ResultCol({ title, r, side }: { title: string; r: RoundResult; side: 'green' | 'orange' }) {
+function Num({ value, fmt = (n: number) => Math.round(n).toLocaleString() }: { value: number; fmt?: (n: number) => string }) {
+  const v = useTween(value, 800);
+  return <>{fmt(v)}</>;
+}
+
+function ResultCol({ title, r, side, win }: { title: string; r: RoundResult; side: 'supabase' | 'claude'; win: boolean }) {
   return (
-    <div className={`result-col ${side}`}>
-      <div className="rc-title">{title}</div>
-      <div className="rc-action">{r.actionLabel}</div>
+    <div className={`result-col ${side} ${win ? 'win' : ''}`}>
+      <div className="rc-head">
+        <div className="mini-portrait"><Portrait side={side} /></div>
+        <div>
+          <div className="rc-title">{title}</div>
+          <div className="rc-action">{r.actionLabel}</div>
+        </div>
+        {win && <div className="rc-crown">👑</div>}
+      </div>
+      <div className={`rc-profit ${r.profit >= 0 ? 'pos' : 'neg'}`}>
+        <Num value={r.profit} fmt={signedMoney} />
+        <small>PROFIT</small>
+      </div>
       <table className="rc-table">
         <tbody>
           <tr><td>Revenue</td><td className="pos">{signedMoney(r.revenue)}</td></tr>
           <tr><td>Expenses</td><td className="neg">-{money(r.expenses)}</td></tr>
-          <tr className="sum"><td>Profit</td><td className={r.profit >= 0 ? 'pos' : 'neg'}>{signedMoney(r.profit)}</td></tr>
           <tr><td>Customers</td><td>{r.customers}</td></tr>
-          <tr><td>Market share</td><td>{Math.round(r.share * 100)}%</td></tr>
           <tr><td>Reputation</td><td className={r.repDelta >= 0 ? 'pos' : 'neg'}>{signed(r.repDelta, 1)}</td></tr>
           <tr><td>Satisfaction</td><td className={r.satDelta >= 0 ? 'pos' : 'neg'}>{signed(r.satDelta, 1)}</td></tr>
         </tbody>
@@ -324,23 +386,29 @@ function ResultCol({ title, r, side }: { title: string; r: RoundResult; side: 'g
 function ResultsOverlay({ record, onNext, last }: { record: RoundRecord; onNext: () => void; last: boolean }) {
   const pWins = record.player.profit > record.claude.profit;
   const tie = record.player.profit === record.claude.profit;
+  const [grow, setGrow] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setGrow(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const ps = grow ? record.player.share * 100 : 50;
   return (
     <div className="overlay">
-      <div className="results pixel-panel">
+      <div className="results dialog">
         <div className="results-head">
-          <div className="results-kicker">ROUND {record.index + 1} RESULTS · {record.scenarioTitle.toUpperCase()}</div>
-          <div className={`results-verdict ${tie ? '' : pWins ? 'green-text' : 'orange-text'}`}>
-            {tie ? 'DEAD EVEN' : pWins ? 'SUPABASE CAFÉ TAKES THE ROUND ☕' : 'CLAUDE CAFÉ TAKES THE ROUND 🤖'}
+          <div className="results-kicker">ROUND {record.index + 1} · {record.scenarioTitle.toUpperCase()}</div>
+          <div className={`results-verdict ${tie ? 'gold-text' : pWins ? 'green-text' : 'orange-text'}`}>
+            {tie ? 'DEAD EVEN' : pWins ? 'SUPABASE CAFÉ TAKES THE ROUND' : 'CLAUDE CAFÉ TAKES THE ROUND'}
           </div>
-          <div className="results-market">{record.totalDemand} customers in the neighborhood this round</div>
           <div className="share-bar">
-            <div className="sb-green" style={{ width: `${record.player.share * 100}%` }}>{Math.round(record.player.share * 100)}%</div>
-            <div className="sb-orange" style={{ width: `${record.claude.share * 100}%` }}>{Math.round(record.claude.share * 100)}%</div>
+            <div className="sb-green" style={{ width: `${ps}%` }}>⚡ {Math.round(record.player.share * 100)}%</div>
+            <div className="sb-orange" style={{ width: `${100 - ps}%` }}>{Math.round(record.claude.share * 100)}% ✻</div>
           </div>
+          <div className="results-market">{record.totalDemand} customers in the shared neighborhood this round</div>
         </div>
         <div className="results-cols">
-          <ResultCol title="SUPABASE CAFÉ" r={record.player} side="green" />
-          <ResultCol title="CLAUDE CAFÉ" r={record.claude} side="orange" />
+          <ResultCol title="SUPABASE CAFÉ" r={record.player} side="supabase" win={pWins} />
+          <ResultCol title="CLAUDE CAFÉ" r={record.claude} side="claude" win={!pWins && !tie} />
         </div>
         <button className="pixel-btn big gold" onClick={onNext} autoFocus>
           {record.slot === 'Evening' ? (last ? 'SEE FINAL DAY REPORT ▶' : 'END OF DAY ▶') : 'NEXT SCENARIO ▶'}
@@ -353,32 +421,48 @@ function ResultsOverlay({ record, onNext, last }: { record: RoundRecord; onNext:
 function DayReport({ game, day, onNext }: { game: GameState; day: number; onNext: () => void }) {
   const p = dayTotals(game, day, 'supabase');
   const c = dayTotals(game, day, 'claude');
-  const rows: Array<[string, string, string, number, number]> = [
-    ['Cash', money(game.cafes.supabase.cash), money(game.cafes.claude.cash), game.cafes.supabase.cash, game.cafes.claude.cash],
-    ['Day profit', money(p.profit), money(c.profit), p.profit, c.profit],
-    ['Day customers', String(p.customers), String(c.customers), p.customers, c.customers],
-    ['Reputation', String(Math.round(game.cafes.supabase.reputation)), String(Math.round(game.cafes.claude.reputation)), game.cafes.supabase.reputation, game.cafes.claude.reputation],
-    ['Satisfaction', String(Math.round(game.cafes.supabase.satisfaction)), String(Math.round(game.cafes.claude.satisfaction)), game.cafes.supabase.satisfaction, game.cafes.claude.satisfaction],
+  const S = game.cafes.supabase;
+  const C = game.cafes.claude;
+  const rows: Array<[string, number, number, (n: number) => string]> = [
+    ['CASH', S.cash, C.cash, money],
+    ['DAY PROFIT', p.profit, c.profit, money],
+    ['DAY CUSTOMERS', p.customers, c.customers, (n) => String(n)],
+    ['REPUTATION', S.reputation, C.reputation, (n) => String(Math.round(n))],
+    ['SATISFACTION', S.satisfaction, C.satisfaction, (n) => String(Math.round(n))],
   ];
+  const ps = finalScore(S).total;
+  const cs = finalScore(C).total;
+  const leader = ps === cs ? 'tie' : ps > cs ? 'supabase' : 'claude';
   return (
-    <div className="overlay">
-      <div className="day-report pixel-panel">
+    <div className="overlay night">
+      <div className="day-report dialog">
         <div className="results-kicker">🌙 CLOSING TIME</div>
         <h2 className="day-title">DAY {day} COMPLETE</h2>
-        <table className="day-table">
-          <thead>
-            <tr><th /><th className="green-text">SUPABASE CAFÉ</th><th className="orange-text">CLAUDE CAFÉ</th></tr>
-          </thead>
-          <tbody>
-            {rows.map(([k, a, b, an, bn]) => (
-              <tr key={k}>
-                <td>{k}</td>
-                <td className={an > bn ? 'lead' : ''}>{a}</td>
-                <td className={bn > an ? 'lead' : ''}>{b}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="day-heads">
+          <div className="dh supabase"><div className="mini-portrait"><Portrait side="supabase" /></div>SUPABASE CAFÉ</div>
+          <div className="dh claude">CLAUDE CAFÉ<div className="mini-portrait"><Portrait side="claude" /></div></div>
+        </div>
+        <div className="day-rows">
+          {rows.map(([k, a, b, f], i) => {
+            const total = Math.abs(a) + Math.abs(b) || 1;
+            const aw = Math.max(4, (Math.max(0, a) / total) * 100);
+            const bw = Math.max(4, (Math.max(0, b) / total) * 100);
+            return (
+              <div className="day-row" key={k} style={{ animationDelay: `${i * 0.08}s` }}>
+                <div className={`dv supabase ${a > b ? 'lead' : ''}`}>{a > b && '▲ '}{f(a)}</div>
+                <div className="dbar">
+                  <i className="g" style={{ width: `${aw / 2}%` }} />
+                  <span>{k}</span>
+                  <i className="o" style={{ width: `${bw / 2}%` }} />
+                </div>
+                <div className={`dv claude ${b > a ? 'lead' : ''}`}>{f(b)}{b > a && ' ▲'}</div>
+              </div>
+            );
+          })}
+        </div>
+        <div className={`day-leader ${leader}`}>
+          {leader === 'tie' ? 'NECK AND NECK' : leader === 'supabase' ? `⚡ SUPABASE CAFÉ LEADS ${ps.toLocaleString()} – ${cs.toLocaleString()}` : `✻ CLAUDE CAFÉ LEADS ${cs.toLocaleString()} – ${ps.toLocaleString()}`}
+        </div>
         <button className="pixel-btn big gold" onClick={onNext} autoFocus>
           {game.status === 'finished' ? 'FINAL RESULTS 🏆' : `START DAY ${day + 1} ☀️`}
         </button>

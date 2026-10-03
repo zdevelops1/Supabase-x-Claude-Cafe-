@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import CafeScene from './CafeScene';
+import CafeScene, { Portrait } from './CafeScene';
 import { api, type Health } from '../lib/api';
 import { onNewResult } from '../lib/realtime';
 import { sfx } from '../lib/sfx';
@@ -30,26 +30,26 @@ export default function TitleScreen({
     <div className="title-screen">
       <div className="title-bg">
         <div className="title-half left">
-          <CafeScene side="supabase" slot="Evening" queue={4} seated={6} />
+          <CafeScene side="supabase" slot="Evening" queue={4} seated={7} />
         </div>
         <div className="title-half right">
-          <CafeScene side="claude" slot="Evening" queue={4} seated={6} busy />
+          <CafeScene side="claude" slot="Evening" queue={4} seated={7} busy />
         </div>
         <div className="title-vignette" />
       </div>
 
-      <div className="title-card pixel-panel">
-        <div className="title-logos">
-          <span className="logo-chip green">⚡</span>
-          <span className="vs-chip">×</span>
-          <span className="logo-chip orange">✻</span>
+      <div className="title-card dialog">
+        <div className="title-versus">
+          <div className="mini-portrait"><Portrait side="supabase" /></div>
+          <div className="vs-gem"><span>VS</span></div>
+          <div className="mini-portrait robot"><Portrait side="claude" /></div>
         </div>
         <h1 className="title-main">
           <span className="green-text">SUPABASE</span> <span className="x">x</span> <span className="orange-text">CLAUDE</span>
           <br />
-          CAFÉ
+          <span className="cafe">CAFÉ</span>
         </h1>
-        <p className="title-sub">Human vs. Agent</p>
+        <p className="title-sub">HUMAN VS AGENT</p>
         <p className="title-pitch">
           You run <b className="green-text">Supabase Café</b>. Across the street, an autonomous <b className="orange-text">Claude agent</b> runs its own café
           in the same market — observing, reasoning, remembering, and competing against you.

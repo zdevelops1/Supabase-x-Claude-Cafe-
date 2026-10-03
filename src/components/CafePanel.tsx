@@ -1,15 +1,14 @@
-import type { ReactNode } from 'react';
 import CafeScene from './CafeScene';
 import { RULES } from '../engine/engine';
 import type { CafeState, RoundResult, Side, Slot } from '../engine/types';
 import { money, signedMoney, useTween } from '../lib/useTween';
 
-function Bar({ value, color }: { value: number; color: string }) {
+function Bar({ value, kind }: { value: number; kind: 'rep' | 'sat' }) {
   const v = useTween(value);
   return (
-    <div className="bar">
-      <div className="bar-fill" style={{ width: `${Math.max(0, Math.min(100, v))}%`, background: color }} />
-      <span className="bar-num">{Math.round(v)}</span>
+    <div className={`pbar ${kind}`}>
+      <div className="pbar-fill" style={{ width: `${Math.max(0, Math.min(100, v))}%` }} />
+      <span className="pbar-num">{Math.round(v)}</span>
     </div>
   );
 }
@@ -19,6 +18,7 @@ function Num({ value, fmt = (n: number) => Math.round(n).toLocaleString() }: { v
   return <>{fmt(v)}</>;
 }
 
+/** One café: the pixel scene with an overlaid stat plate (top) and a nameplate (bottom). */
 export default function CafePanel({
   side,
   cafe,
@@ -26,7 +26,6 @@ export default function CafePanel({
   last,
   busy,
   floaterKey,
-  children,
 }: {
   side: Side;
   cafe: CafeState;
@@ -34,71 +33,67 @@ export default function CafePanel({
   last: RoundResult | null;
   busy?: boolean;
   floaterKey?: number;
-  children: ReactNode;
 }) {
   const isHuman = side === 'supabase';
-  const accent = isHuman ? 'var(--green)' : 'var(--orange)';
   const customers = last?.customers ?? 70;
-  const queue = Math.round(customers / 22);
-  const seated = Math.round(customers / 16);
+  const queue = Math.round(customers / 20);
+  const seated = last ? Math.round(last.share * 13) : 5; // tables fill with market share
 
   return (
     <section className={`cafe-panel ${side}`}>
-      <header className="cafe-header">
-        <div className="cafe-name">
-          <span className="cafe-icon">{isHuman ? '⚡' : '✻'}</span>
-          {isHuman ? 'SUPABASE CAFÉ' : 'CLAUDE CAFÉ'}
-        </div>
-        <div className={`controller-tag ${side}`}>{isHuman ? '👤 HUMAN PLAYER' : '🤖 AI AGENT'}</div>
-      </header>
-
       <div className="scene-wrap">
         <CafeScene side={side} slot={slot} queue={queue} seated={seated} busy={busy} bump={floaterKey ?? 0} />
+
+        <div className={`stat-plate ${side}`}>
+          <div className="plate-title">
+            <span className="plate-icon">{isHuman ? '⚡' : '✻'}</span>
+            {isHuman ? 'SUPABASE CAFÉ' : 'CLAUDE CAFÉ'}
+          </div>
+          <div className="plate-cash">
+            <span>CASH</span>
+            <b>
+              <Num value={cafe.cash} fmt={money} />
+            </b>
+          </div>
+          <div className="plate-row">
+            <span>REP</span>
+            <Bar value={cafe.reputation} kind="rep" />
+          </div>
+          <div className="plate-row">
+            <span>SAT</span>
+            <Bar value={cafe.satisfaction} kind="sat" />
+          </div>
+          <div className="plate-mini">
+            <span title="Customers served">👥 <Num value={cafe.totals.customers} /></span>
+            <span title="Staff (capacity per round)">🧑‍🍳 {cafe.staff}<small>/{cafe.staff * RULES.capacityPerStaff}</small></span>
+            <span title="Inventory">📦 {cafe.inventory}</span>
+            <span title="Average ticket">☕ ${(RULES.ticket * cafe.price).toFixed(2)}</span>
+            <span title="Quality">✦ {Math.round(cafe.quality)}</span>
+          </div>
+        </div>
+
+        {last && (
+          <div className={`share-plate ${side}`}>
+            <span>MARKET SHARE</span>
+            <b>{Math.round(last.share * 100)}%</b>
+          </div>
+        )}
+
+        <div className={`nameplate ${side}`}>{isHuman ? '👤 HUMAN PLAYER' : '🤖 AUTONOMOUS AGENT'}</div>
+
         {last && floaterKey !== undefined && (
           <div className="floaters" key={floaterKey}>
             <span className={`floater ${last.profit >= 0 ? 'pos' : 'neg'}`}>{signedMoney(last.profit)}</span>
-            <span className={`floater f2 ${last.repDelta >= 0 ? 'pos' : 'neg'}`} style={{ animationDelay: '0.35s' }}>
-              {last.repDelta >= 0 ? '★+' : '★'}
+            <span className={`floater f2 ${last.repDelta >= 0 ? 'pos' : 'neg'}`} style={{ animationDelay: '0.25s' }}>
+              ★{last.repDelta >= 0 ? '+' : ''}
               {last.repDelta.toFixed(1)}
             </span>
-            <span className="floater f3" style={{ animationDelay: '0.6s' }}>
+            <span className="floater f3" style={{ animationDelay: '0.45s' }}>
               👥 {last.customers}
             </span>
           </div>
         )}
-        {last && (
-          <div className="share-badge" style={{ borderColor: accent }}>
-            MARKET SHARE <b style={{ color: accent }}>{Math.round(last.share * 100)}%</b>
-          </div>
-        )}
       </div>
-
-      <div className="stats">
-        <div className="stat cash">
-          <span className="stat-label">CASH</span>
-          <span className="stat-value big" style={{ color: accent }}>
-            <Num value={cafe.cash} fmt={money} />
-          </span>
-        </div>
-        <div className="stat">
-          <span className="stat-label">REPUTATION</span>
-          <Bar value={cafe.reputation} color={accent} />
-        </div>
-        <div className="stat">
-          <span className="stat-label">SATISFACTION</span>
-          <Bar value={cafe.satisfaction} color="var(--gold)" />
-        </div>
-        <div className="mini-stats">
-          <div><span>CUSTOMERS</span><b><Num value={cafe.totals.customers} /></b></div>
-          <div><span>PROFIT</span><b className={cafe.totals.profit >= 0 ? 'pos' : 'neg'}><Num value={cafe.totals.profit} fmt={money} /></b></div>
-          <div><span>STAFF</span><b>{cafe.staff} <small>({cafe.staff * RULES.capacityPerStaff}/rd)</small></b></div>
-          <div><span>TICKET</span><b>${(RULES.ticket * cafe.price).toFixed(2)}</b></div>
-          <div><span>STOCK</span><b>{cafe.inventory}</b></div>
-          <div><span>QUALITY</span><b>{Math.round(cafe.quality)}</b></div>
-        </div>
-      </div>
-
-      <div className="panel-controls">{children}</div>
     </section>
   );
 }
