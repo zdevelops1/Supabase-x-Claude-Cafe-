@@ -10,7 +10,7 @@ import { storage, type SaveData } from '../lib/storage';
 import { sfx } from '../lib/sfx';
 import { money, signed, signedMoney, useTween } from '../lib/useTween';
 
-type Phase = 'deciding' | 'revealing' | 'resolving' | 'results' | 'day';
+type Phase = 'deciding' | 'revealing' | 'resolving' | 'money' | 'results' | 'day';
 type ClaudeStatus = 'thinking' | 'locked' | 'revealed' | 'error';
 
 const CONTEXT_LABEL = {
@@ -99,15 +99,19 @@ export default function GameScreen({
         setPhase('revealing');
         sfx.reveal();
         await new Promise((r) => setTimeout(r, 2200));
-        setGame(out.state);
+        // Money pop: the real engine profit (= cash change) for each café, ~0.75s.
         setRecord(out.record);
+        setPhase('money');
+        const ps = (n: number) => (n > 0 ? sfx.chaChing : n < 0 ? sfx.loss : () => {});
+        ps(out.record.player.profit)(0, 0.05);
+        ps(out.record.claude.profit)(0.2, 0.035);
+        await new Promise((r) => setTimeout(r, 750));
+        setGame(out.state);
         setFloaterKey(out.record.index + 1);
         storage.save({ state: out.state });
         setPhase('results');
         setShowCard(false);
         setTimeout(() => setShowCard(true), 1300); // let floaters + customers land first
-        if (out.record.player.profit >= out.record.claude.profit) sfx.cash();
-        else sfx.lose();
       } catch (e) {
         resolvingFor.current = -1;
         setErr(String((e as Error).message));
@@ -336,6 +340,7 @@ export default function GameScreen({
           </div>
         </div>
       )}
+      {phase === 'money' && record && <MoneyPop record={record} />}
       {phase === 'resolving' && <div className="reveal-banner small">⚖ THE ENGINE IS SIMULATING THE MARKET…</div>}
 
       {phase === 'results' && record && !showCard && (
@@ -472,6 +477,26 @@ function DayReport({ game, day, onNext }: { game: GameState; day: number; onNext
           {game.status === 'finished' ? 'FINAL RESULTS 🏆' : `START DAY ${day + 1} ☀️`}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Centered result pop shown between the reveal and the results card. Values come straight from the engine record. */
+function MoneyPop({ record }: { record: RoundRecord }) {
+  const one = (label: string, n: number, delay: number) => {
+    const kind = n > 0 ? 'gain' : n < 0 ? 'loss' : 'even';
+    return (
+      <div className={`mp-card ${kind}`} style={{ animationDelay: `${delay}s` }} data-amount={n}>
+        <small>{label}</small>
+        {n > 0 && <span className="mp-head">CHA-CHING!</span>}
+        <b>{n > 0 ? '+' : n < 0 ? '-' : ''}${Math.abs(Math.round(n)).toLocaleString()}</b>
+      </div>
+    );
+  };
+  return (
+    <div className="money-pop" role="status">
+      {one('⚡ SUPABASE CAFÉ', record.player.profit, 0)}
+      {one('CLAUDE CAFÉ ✻', record.claude.profit, 0.12)}
     </div>
   );
 }

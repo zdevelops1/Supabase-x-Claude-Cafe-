@@ -576,3 +576,18 @@ button { font-family: inherit; color: inherit; }
 .music-btn.on .music-bars i:nth-child(2) { animation-delay: 0.2s; }
 .music-btn.on .music-bars i:nth-child(3) { animation-delay: 0.4s; }
 .music-btn.floating { position: fixed; top: 12px; right: 12px; z-index: 60; }
+
+/* ── Money pop (round result) ── */
+.money-pop { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 46; display: flex; gap: 18px; pointer-events: none; }
+.mp-card { min-width: 220px; padding: 14px 20px 16px; text-align: center; font-family: var(--pixel); background: rgba(8, 16, 20, 0.94); box-shadow: 0 0 0 4px var(--ink), 0 0 0 7px currentColor, 0 0 60px rgba(0, 0, 0, 0.85); animation: mpPop 0.42s cubic-bezier(.2, 1.6, .4, 1) both; }
+.mp-card small { display: block; font-size: 9px; letter-spacing: 1px; color: var(--cream, #ece6d6); opacity: .8; margin-bottom: 6px; }
+.mp-card .mp-head { display: block; font-size: 14px; margin-bottom: 4px; letter-spacing: 1px; }
+.mp-card b { display: block; font-size: 34px; line-height: 1.1; text-shadow: 3px 3px 0 #000; }
+.mp-card.gain { color: #5dff8f; }
+.mp-card.gain b { text-shadow: 3px 3px 0 #000, 0 0 18px rgba(93, 255, 143, .55); }
+.mp-card.loss { color: #ff4f5e; }
+.mp-card.loss b { text-shadow: 3px 3px 0 #000, 0 0 18px rgba(255, 79, 94, .5); }
+.mp-card.even { color: #c9c1ad; }
+@keyframes mpPop { 0% { transform: scale(.3); opacity: 0; } 70% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@media (max-width: 760px) { .money-pop { flex-direction: column; gap: 12px; } .mp-card { min-width: 200px; } .mp-card b { font-size: 28px; } }
+@media (max-height: 800px) { .mp-card b { font-size: 28px; } .mp-card { padding: 10px 16px 12px; } }
