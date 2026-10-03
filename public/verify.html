@@ -1,0 +1,18 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Live verification</title>
+<style>body{background:#0b1418;color:#ece6d6;font:14px/1.4 ui-monospace,monospace;padding:16px}pre{white-space:pre-wrap}#status{font-weight:bold}</style></head>
+<body><div id="status">checking…</div><pre id="log"></pre><pre id="result"></pre>
+<script type="module">
+import { run } from '/verify-live.mjs';
+const st = document.getElementById('status'), lg = document.getElementById('log'), rs = document.getElementById('result');
+const h = await fetch('/api/health').then((r) => r.json()).catch(() => ({}));
+if (!h.diagnostics) { st.textContent = 'DISABLED — diagnostics are off (ENABLE_DIAGNOSTICS=0). Nothing was run.'; }
+else if (!new URLSearchParams(location.search).has('run')) { st.textContent = 'READY — append ?run=1 to run a full live Hard game (12 real Claude calls).'; }
+else {
+  st.textContent = 'RUNNING…';
+  const r = await run(location.origin, (...a) => { lg.textContent += a.join(' ') + '\n'; }).catch((e) => ({ crash: String(e) }));
+  const failed = Object.values(r).some((v) => String(v).startsWith('FAIL')) || r.crash;
+  st.textContent = failed ? 'DONE — FAILURES' : 'DONE — ALL PASS';
+  rs.textContent = 'RESULT ' + JSON.stringify(r, null, 2);
+}
+</script></body></html>
