@@ -1,0 +1,88 @@
+# ☕ Supabase x Claude Café — Human vs. Agent
+
+> **Hackathon theme: “Build Something Agents Want.”**
+> You run **Supabase Café**. Across the street, an autonomous **Claude agent** runs **Claude Café**. Both businesses face the same market and the same events — but Claude independently observes its business, reasons about what to do, remembers previous rounds, and competes against you. Higher difficulty = more context and strategic memory for the agent.
+
+A pixel-art, split-screen café business battle: 4 days × 3 scenarios = **12 rounds**. Each round you pick A/B/C/D, Claude picks its own move (sealed — it can't see yours), and a **deterministic engine** referees both outcomes in a **shared market** where customers choose between the two cafés.
+
+---
+
+## Architecture
+
+```
+MARKET EVENT ──► GAME STATE
+                    │
+        ┌───────────┴───────────┐
+        │ HUMAN decision        │ CLAUDE AGENT decision      ← /api/agent (server-side, forced tool call,
+        │ (UI buttons)          │ (allowed actionId only)       validated against the allowed action list)
+        └───────────┬───────────┘
+                    ▼
+     DETERMINISTIC SIMULATION ENGINE                         ← /api/resolve (src/engine/engine.ts)
+                    ▼
+          SUPABASE PERSISTENCE                               ← sessions, rounds, agent memory, results
+                    ▼
+          UPDATED SHARED WORLD ──► NEXT ROUND
+```
+
+- **The LLM never touches numbers.** Claude returns `{ actionId, reason, strategyNote? }` via a forced `choose_action` tool whose `actionId` is an enum of the round's options. The server re-validates it; the engine computes everything.
+- **Shared market.** Each round ~200 × event-demand customers split between the cafés via a logit on attraction (reputation, satisfaction, quality, appeal, buzz, discounts, price). Overflow beyond staff capacity or inventory walks out — hurting satisfaction and reputation.
+- **Difficulty = information, not cheats.**
+  - 🟢 **Easy** — own cash, inventory, reputation, the event, the actions. Short-term prompt.
+  - 🟡 **Medium** — + staffing, pricing, satisfaction, quality, market mechanics, its last 3 decisions/outcomes, its own strategy notes.
+  - 🔴 **Hard** — + the human's café stats & pricing, full history of both cafés, a derived profile of the human's habits/strengths/weaknesses, market-share history, the live score, all memory. Prompted to predict and beat you.
+- **Agent memory.** On Medium/Hard Claude writes a private `strategyNote` each round; it's stored in Supabase `agent_memories` and fed back next round (shown in the UI as *Claude's notebook*).
+- **Transparent winner.** `Score = final cash + reputation × $30 + satisfaction × $15`.
+
+### Stack
+- React + TypeScript + Vite (pixel art is hand-drawn SVG — no asset pipeline)
+- Server API: `src/server/*` — served by a Vite dev middleware locally and by a single Vercel function (`api/[route].ts`) in production
+- Anthropic Messages API (server-side only)
+- Supabase Postgres + RLS + Realtime (live Human-vs-Claude record on the title screen)
+
+```
+src/engine/      types, 12 scenarios, deterministic engine (pure functions)
+src/server/      agent.ts (Claude), fallbackAgent.ts, supabase.ts, handlers.ts
+src/components/  TitleScreen, DifficultySelect, GameScreen, CafePanel, CafeScene (SVG), FinalScreen
+api/[route].ts   Vercel serverless entry
+supabase/migrations/  schema
+scripts/simulate.ts   balance checker (npm run sim)
+```
+
+---
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env     # fill in keys (all optional — see below)
+npm run dev              # http://localhost:5173
+```
+
+| Variable | Where it's used | Where to get it |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | server only | console.anthropic.com → API Keys |
+| `ANTHROPIC_MODEL` | server only (default `claude-sonnet-5-5`) | — |
+| `SUPABASE_URL` | server only | Supabase → Project Settings → API → Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | server only | Supabase → Project Settings → API → `service_role` |
+| `VITE_SUPABASE_URL` | browser (Realtime leaderboard) | same Project URL |
+| `VITE_SUPABASE_ANON_KEY` | browser (read-only via RLS) | Supabase → API → `anon` public key |
+
+**Graceful fallbacks:** no Anthropic key → an offline lookahead strategist plays Claude Café and the UI clearly labels it *“Offline fallback strategist”*. No Supabase → the game runs fully; state lives in localStorage.
+
+### Database
+Run `supabase/migrations/20261003000000_init.sql` in the Supabase SQL editor (or `supabase db push`). Tables: `game_sessions`, `game_rounds`, `agent_memories`, `final_results` + `leaderboard` view. RLS blocks all anon access except reading `final_results`; all writes go through the server with the service role key.
+
+### Deploy (Vercel)
+Import the repo → framework **Vite** → add the env vars above → deploy. `vercel.json` routes `/api/*` to the function and everything else to the SPA.
+
+---
+
+## Demo script (≈2 min)
+1. Title screen: point at the split café art and the **live global record** (Supabase Realtime).
+2. Pick **HARD** — read the “Claude receives” list: difficulty changes what the agent *knows*.
+3. Round 1: show **CLAUDE IS THINKING… → 🔒 DECISION LOCKED** (sealed move), then choose yours.
+4. Reveal: **CLAUDE CHOSE: …** + its one-line reason; watch customers and floating cash land, then the side-by-side results and market-share bar.
+5. A few rounds in, point at **Claude's notebook** — it's writing notes about *you*.
+6. Finish the day → day report; finish Day 4 → final scoreboard with the transparent formula. Claude can and does win.
+
+Reloading mid-game resumes where you left off (**RESUME GAME**). `npm run sim` prints a balance check of every scenario's options.
