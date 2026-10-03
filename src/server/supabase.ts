@@ -6,7 +6,8 @@ import type { GameState, RoundRecord } from '../engine/types';
 let client: SupabaseClient | null | undefined;
 export function db(): SupabaseClient | null {
   if (client !== undefined) return client;
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  // Accepts both our names and the ones Vercel's Supabase integration injects.
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   client = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
   return client;

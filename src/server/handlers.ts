@@ -98,6 +98,13 @@ async function route_(route: string, method: string, body: any): Promise<Out> {
       }
     }
 
+    // Public (non-secret) browser config: Supabase URL + anon key for the Realtime leaderboard.
+    case 'config': {
+      const url = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || null;
+      const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || null;
+      return ok({ supabaseUrl: url, supabaseAnonKey: anonKey });
+    }
+
     case 'leaderboard':
       return ok(await leaderboard());
 
